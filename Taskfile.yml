@@ -1,0 +1,38 @@
+version: '3'
+
+tasks:
+  run:
+    desc: Run the API
+    cmds:
+      - go run ./cmd/api
+
+  build:
+    desc: Build the API binary
+    cmds:
+      - go build -o bin/api ./cmd/api
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  test:int:
+    desc: Run integration tests
+    cmds:
+      - go test -tags=integration ./tests/integration/...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  tidy:
+    desc: go mod tidy
+    cmds:
+      - go mod tidy
+
+  db:reset:
+    desc: Delete the SQLite DB and restart
+    cmds:
+      - rm -f data/app.db
+      - go run ./cmd/api

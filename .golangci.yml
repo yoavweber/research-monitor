@@ -1,0 +1,17 @@
+run:
+  timeout: 3m
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosec
+    - govet
+    - staticcheck
+    - contextcheck
+    - ineffassign
+    - unused
+
+issues:
+  exclude-dirs:
+    - tests/mocks

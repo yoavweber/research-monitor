@@ -1,0 +1,21 @@
+# Binaries and build artifacts
+/bin/
+/data/
+*.db
+*.db-journal
+
+# Env
+.env
+.env.local
+
+# Go
+coverage.out
+coverage.html
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store

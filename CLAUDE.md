@@ -59,3 +59,32 @@ Skills are located in `.claude/skills/kiro-*/SKILL.md`
 - Load entire `.kiro/steering/` as project memory
 - Default files: `product.md`, `tech.md`, `structure.md`
 - Custom files are supported (managed via `/kiro-steering-custom`)
+
+---
+
+## Architecture quick-reference
+
+Full rules in [`.kiro/steering/structure.md`](./.kiro/steering/structure.md). Product in [`.kiro/steering/product.md`](./.kiro/steering/product.md). Tech in [`.kiro/steering/tech.md`](./.kiro/steering/tech.md).
+
+### Dependency rule (inward only)
+
+| Layer | May import |
+|---|---|
+| `domain/` | stdlib, other `domain/` subpackages |
+| `application/` | `domain/`, `pkg/` |
+| `infrastructure/` | `domain/`, `pkg/` |
+| `interface/` | `domain/`, `application/`, `pkg/` |
+| `bootstrap/` | everything |
+
+Forbidden: `domain/` → `infrastructure/persistence/`. Conversion via `ToDomain()` / `FromDomain()` on the persistence side.
+
+### Ports and implementations
+
+- Interfaces named `<Name>UseCase`, `<Name>Repository`, defined in `domain/<entity>/ports.go`.
+- Implementing structs unexported: `<name>UseCase`, `<name>Repository`. Constructors named `New<Name>UseCase` return the interface.
+- `context.Context` is the first parameter of every use-case method, every repository method, every outbound adapter call.
+- `log/slog` only, via the `domain/shared.Logger` port.
+
+### Commits
+
+Conventional format: `<type>(<scope>): <subject>` where type ∈ `feat|fix|docs|style|refactor|test|chore|perf`.
