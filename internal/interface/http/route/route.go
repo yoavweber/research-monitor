@@ -18,5 +18,5 @@ type Deps struct {
 
 func Setup(d Deps) {
 	HealthRouter(d)
-	// SourceRouter(d) // uncomment in Task 18
+	SourceRouter(d)
 }
