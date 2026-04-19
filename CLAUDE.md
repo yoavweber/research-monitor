@@ -80,8 +80,8 @@ Forbidden: `domain/` → `infrastructure/persistence/`. Conversion via `ToDomain
 
 ### Ports and implementations
 
-- Interfaces named `<Name>UseCase`, `<Name>Repository`, defined in `domain/<entity>/ports.go`.
-- Implementing structs unexported: `<name>UseCase`, `<name>Repository`. Constructors named `New<Name>UseCase` return the interface.
+- Interfaces named `UseCase`, `Repository` and defined in `domain/<entity>/ports.go`. Callsites use the package-qualified form (`source.UseCase`, `source.Repository`) — Go style avoids stuttering names.
+- Implementing structs unexported (e.g., `sourceUseCase`, `repository`). Constructors named `NewSourceUseCase(...)`, `NewRepository(...)` return the interface.
 - `context.Context` is the first parameter of every use-case method, every repository method, every outbound adapter call.
 - `log/slog` only, via the `domain/shared.Logger` port.
 

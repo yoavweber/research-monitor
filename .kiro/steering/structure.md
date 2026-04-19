@@ -71,9 +71,11 @@ Cross-cutting ports (`Logger`, `Clock`, `LLMClient`, `Extractor`, `APIFetcher`) 
 
 | Thing | Pattern |
 |---|---|
-| Interface | `<Name>UseCase`, `<Name>Repository` |
-| Implementing struct | unexported: `<name>UseCase`, `<name>Repository` (or `repository`) |
-| Constructor | `New<Name>UseCase(...)` returns the interface |
+| Interface | `UseCase`, `Repository` (scoped by package — refer to them as `source.UseCase`, `source.Repository`) |
+| Implementing struct | unexported: `sourceUseCase`, `repository` (or equivalent) |
+| Constructor | `NewSourceUseCase(...)` / `NewRepository(...)` returns the interface |
+
+Rationale: Go style discourages repeating the package name in type names. `source.UseCase` is idiomatic; `source.SourceUseCase` stutters.
 
 ## 8. Error handling
 
