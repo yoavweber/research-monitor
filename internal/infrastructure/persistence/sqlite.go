@@ -14,7 +14,7 @@ func OpenSQLite(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve sqlite path: %w", err)
 	}
-	dsn := abs + "?_pragma=foreign_keys(1)&_journal_mode=WAL"
+	dsn := abs + "?_foreign_keys=1&_journal_mode=WAL"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
