@@ -44,7 +44,7 @@
   - _Requirements: 1.3, 1.5, 4.2_
   - _Boundary: infrastructure/arxiv (parser)_
 
-- [ ] 4.2 Implement the arxiv fetcher composite
+- [x] 4.2 Implement the arxiv fetcher composite
   - Provide a constructor that takes a base URL and a `shared.Fetcher` and returns a `paper.Fetcher`.
   - Build the arxiv-specific query string from `paper.Query`: OR across categories (`cat:X+OR+cat:Y`, parentheses only when there is more than one category), fixed `sortBy=submittedDate&sortOrder=descending`, and `max_results` from the Query. Assemble the URL via `net/url` so characters are encoded safely.
   - Delegate the GET to the injected `shared.Fetcher`. Translate `shared.ErrBadStatus` to `paper.ErrUpstreamBadStatus`; translate `context.DeadlineExceeded`, `net.Error.Timeout() == true`, `*url.Error` wrapping a network-layer failure, and read-body failures to `paper.ErrUpstreamUnavailable`. Any unclassified transport error falls back to `paper.ErrUpstreamUnavailable`.
