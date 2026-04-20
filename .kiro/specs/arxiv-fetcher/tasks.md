@@ -92,7 +92,7 @@
   - _Requirements: 1.2_
 
 - [ ] 8. Validation — endpoint integration tests
-- [ ] 8.1 Exercise the endpoint end-to-end through the fake paper.Fetcher
+- [x] 8.1 Exercise the endpoint end-to-end through the fake paper.Fetcher
   - 200 happy: fake returns canned entries → response body matches the wire schema and the fake's recorded `paper.Query` equals the harness-configured one.
   - 200 empty: fake returns `([]paper.Entry{}, nil)` → `data.entries` is `[]` and `data.count` is `0`.
   - 401: request sent without (and with an invalid) `X-API-Token` returns 401, and the fake's invocation counter remains at zero.
