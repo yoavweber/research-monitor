@@ -17,10 +17,10 @@ import (
 	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/observability"
 	persistence "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence"
 	sourcerepo "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence/source"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/common"
-	arxivctrl "github.com/yoavweber/defi-monitor-backend/internal/interface/http/controller/arxiv"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/controller"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/middleware"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/common"
+	arxivctrl "github.com/yoavweber/defi-monitor-backend/internal/http/controller/arxiv"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/controller"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/middleware"
 )
 
 const TestToken = "test-token"

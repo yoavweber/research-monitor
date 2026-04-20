@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/common"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/common"
 )
 
 func HealthRouter(d Deps) {

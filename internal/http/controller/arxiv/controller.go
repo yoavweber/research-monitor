@@ -7,7 +7,7 @@ import (
 
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/common"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/common"
 )
 
 // ArxivController is the HTTP handler for GET /api/arxiv/fetch. It delegates

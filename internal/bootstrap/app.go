@@ -11,11 +11,11 @@ import (
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
 	arxivinfra "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/arxiv"
-	httpinfra "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/http"
+	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/httpclient"
 	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/observability"
 	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/middleware"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/route"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/middleware"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/route"
 )
 
 type App struct {
@@ -50,7 +50,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	// The byte fetcher owns the long-lived *http.Client (connection pooling)
 	// and the User-Agent arXiv sees on every outbound call. Contact URL in
 	// the UA is a courtesy for arXiv's operators per their API etiquette.
-	byteFetcher := httpinfra.NewByteFetcher(
+	byteFetcher := httpclient.NewByteFetcher(
 		15*time.Second,
 		"defi-monitor/1.0 (+https://github.com/yoavweber/defi-monitor-backend)",
 	)

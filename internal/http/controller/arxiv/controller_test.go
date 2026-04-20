@@ -12,7 +12,7 @@ import (
 
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/middleware"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/middleware"
 )
 
 func init() {

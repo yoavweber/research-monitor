@@ -1,4 +1,4 @@
-package http_test
+package httpclient_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	httpinfra "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/http"
+	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/httpclient"
 )
 
 // Note: a "read-body-fail after headers" scenario is not explicitly tested
@@ -36,7 +36,7 @@ func TestByteFetcher_2xx_ReturnsBody(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	f := httpinfra.NewByteFetcher(2*time.Second, wantUA)
+	f := httpclient.NewByteFetcher(2*time.Second, wantUA)
 
 	got, err := f.Fetch(context.Background(), srv.URL)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestByteFetcher_Non2xx_WrapsErrBadStatus(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	f := httpinfra.NewByteFetcher(2*time.Second, "test-ua/1.0")
+	f := httpclient.NewByteFetcher(2*time.Second, "test-ua/1.0")
 
 	got, err := f.Fetch(context.Background(), srv.URL)
 	if err == nil {
@@ -87,7 +87,7 @@ func TestByteFetcher_404_WrapsErrBadStatus(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	f := httpinfra.NewByteFetcher(2*time.Second, "test-ua/1.0")
+	f := httpclient.NewByteFetcher(2*time.Second, "test-ua/1.0")
 
 	_, err := f.Fetch(context.Background(), srv.URL)
 	if err == nil {
@@ -115,7 +115,7 @@ func TestByteFetcher_Timeout_ReturnsDeadlineExceeded(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	// Use per-request context timeout for clean DeadlineExceeded identification.
-	f := httpinfra.NewByteFetcher(2*time.Second, "test-ua/1.0")
+	f := httpclient.NewByteFetcher(2*time.Second, "test-ua/1.0")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -139,7 +139,7 @@ func TestByteFetcher_ConnectionRefused_ReturnsError(t *testing.T) {
 	deadURL := srv.URL
 	srv.Close()
 
-	f := httpinfra.NewByteFetcher(2*time.Second, "test-ua/1.0")
+	f := httpclient.NewByteFetcher(2*time.Second, "test-ua/1.0")
 
 	_, err := f.Fetch(context.Background(), deadURL)
 	if err == nil {
@@ -154,7 +154,7 @@ func TestByteFetcher_ConnectionRefused_ReturnsError(t *testing.T) {
 func TestByteFetcher_BadURL_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	f := httpinfra.NewByteFetcher(2*time.Second, "test-ua/1.0")
+	f := httpclient.NewByteFetcher(2*time.Second, "test-ua/1.0")
 
 	_, err := f.Fetch(context.Background(), "ht!tp://no.such.thing")
 	if err == nil {

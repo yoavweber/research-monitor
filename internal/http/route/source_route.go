@@ -3,7 +3,7 @@ package route
 import (
 	"github.com/yoavweber/defi-monitor-backend/internal/application"
 	sourcerepo "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence/source"
-	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/controller"
+	"github.com/yoavweber/defi-monitor-backend/internal/http/controller"
 )
 
 func SourceRouter(d Deps) {

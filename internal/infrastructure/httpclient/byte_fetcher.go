@@ -1,18 +1,14 @@
-// Package http provides a concrete, source-neutral implementation of the
+// Package httpclient provides a concrete, source-neutral implementation of the
 // shared.Fetcher port: a byte-level HTTP GET client that performs a single
 // request per call, returns the response body on 2xx, wraps shared.ErrBadStatus
 // on non-2xx, and surfaces stdlib-identifiable transport errors otherwise.
-//
-// The package is named "http" (matching its directory) and clashes with the
-// stdlib "net/http" package; callers that need both should alias this one
-// (e.g. `import httpinfra ".../internal/infrastructure/http"`).
-package http
+package httpclient
 
 import (
 	"context"
 	"fmt"
 	"io"
-	stdhttp "net/http"
+	"net/http"
 	"time"
 
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
@@ -21,7 +17,7 @@ import (
 // byteFetcher is the concrete shared.Fetcher implementation. It holds a
 // long-lived *http.Client so connection pooling survives across calls.
 type byteFetcher struct {
-	client    *stdhttp.Client
+	client    *http.Client
 	userAgent string
 }
 
@@ -32,7 +28,7 @@ type byteFetcher struct {
 // userAgent non-empty. The constructor does not panic on violations.
 func NewByteFetcher(timeout time.Duration, userAgent string) shared.Fetcher {
 	return &byteFetcher{
-		client: &stdhttp.Client{
+		client: &http.Client{
 			Timeout: timeout,
 			// No custom redirect policy: Go's default (follow up to 10
 			// redirects) is intentional for generic use.
@@ -47,7 +43,7 @@ func NewByteFetcher(timeout time.Duration, userAgent string) shared.Fetcher {
 // it surfaces stdlib errors (context.DeadlineExceeded, *url.Error, ...) so
 // adapters above this layer can classify them.
 func (f *byteFetcher) Fetch(ctx context.Context, url string) ([]byte, error) {
-	req, err := stdhttp.NewRequestWithContext(ctx, stdhttp.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
