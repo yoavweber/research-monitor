@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title type="html">arXiv Query</title>
+  <id>http://arxiv.org/api/query</id>
+  <updated>2024-04-15T12:00:00Z</updated>
+  <opensearch:totalResults xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">2</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2404.12345v1</id>
+    <updated>2024-04-15T10:30:00Z</updated>
+    <published>2024-04-15T09:00:00Z</published>
+    <title>A Study on Learning Methods in Distributed Systems</title>
+    <summary>We propose a novel framework for distributed learning that improves convergence under heterogeneous data.</summary>
+    <author>
+      <name>Alice Researcher</name>
+    </author>
+    <link title="pdf" rel="related" type="application/pdf" href="http://arxiv.org/pdf/2404.12345v1"/>
+    <link rel="alternate" type="text/html" href="http://arxiv.org/abs/2404.12345v1"/>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.ML" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2403.09876v2</id>
+    <updated>2024-04-10T14:00:00Z</updated>
+    <published>2024-03-20T08:15:00Z</published>
+    <title>Volatility Forecasting with Transformer Architectures</title>
+    <summary>This paper explores transformer-based models for short-horizon volatility forecasts in equity markets.</summary>
+    <author>
+      <name>Bob Quant</name>
+    </author>
+    <author>
+      <name>Carol Statistician</name>
+    </author>
+    <link title="pdf" rel="related" type="application/pdf" href="http://arxiv.org/pdf/2403.09876v2"/>
+    <link rel="alternate" type="text/html" href="http://arxiv.org/abs/2403.09876v2"/>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="q-fin.ST" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="q-fin.ST" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+</feed>

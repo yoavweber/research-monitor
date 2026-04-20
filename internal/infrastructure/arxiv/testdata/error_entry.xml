@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title type="html">arXiv Query</title>
+  <id>http://arxiv.org/api/query</id>
+  <updated>2024-04-15T12:00:00Z</updated>
+  <entry>
+    <id>http://arxiv.org/api/errors#incorrect_id_format_for_2404.BADID</id>
+    <title>Error</title>
+    <summary>incorrect id format for 2404.BADID</summary>
+    <updated>2024-04-15T12:00:00Z</updated>
+    <published>2024-04-15T12:00:00Z</published>
+    <author>
+      <name>arXiv.org</name>
+    </author>
+    <link rel="alternate" type="text/html" href="http://arxiv.org/api/errors"/>
+  </entry>
+</feed>

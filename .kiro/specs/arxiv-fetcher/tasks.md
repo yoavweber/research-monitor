@@ -35,7 +35,7 @@
   - _Boundary: infrastructure/http_
 
 - [ ] 4. Core — arxiv adapter (parser + fetcher)
-- [ ] 4.1 (P) Implement the Atom parser with fixture tests
+- [x] 4.1 (P) Implement the Atom parser with fixture tests
   - Provide a pure function that decodes an arXiv Atom feed into `[]paper.Entry` and returns `paper.ErrUpstreamMalformed` on any decode failure or on detected Atom-wrapped error entries (`<id>http://arxiv.org/api/errors#…</id>`).
   - Populate `SourceID`/`Version` by stripping `http://arxiv.org/abs/` from `<id>` and splitting the trailing `vN` suffix; pull `PDFURL` from the `<link title="pdf">` element rather than constructing it.
   - Add four fixture files under the package's `testdata/` directory: happy multi-entry, valid-empty, malformed XML, and Atom-wrapped error entry.
