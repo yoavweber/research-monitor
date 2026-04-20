@@ -25,7 +25,7 @@
   - _Requirements: 2.1, 2.2, 3.3_
 
 - [ ] 3. Core — generic byte fetcher
-- [ ] 3.1 (P) Implement the generic byte fetcher
+- [x] 3.1 (P) Implement the generic byte fetcher
   - Provide a constructor that takes a request timeout and a `User-Agent` string and returns a `shared.Fetcher`.
   - Perform a single `GET` per call with the configured `User-Agent` and a permissive `Accept` header; do not retry or follow unusual redirect policies.
   - On 2xx, return the response body. On non-2xx, return an error wrapping `shared.ErrBadStatus` together with the received status code. On a read-body failure after headers, return an error the caller can classify as "no complete response".
