@@ -71,7 +71,7 @@
   - _Requirements: 1.1, 1.3, 1.5, 4.4_
   - _Boundary: interface/http/controller/arxiv_
 
-- [ ] 6.2 Extend route.Deps and register the arxiv router
+- [x] 6.2 Extend route.Deps and register the arxiv router
   - Add an `Arxiv ArxivConfig{Fetcher paper.Fetcher, Query paper.Query}` field to `route.Deps`.
   - Implement `ArxivRouter(d Deps)` that constructs the use case and controller locally from `d.Arxiv` + `d.Logger` and registers `GET /arxiv/fetch` on `d.Group`.
   - Wire `ArxivRouter(d)` into `route.Setup` after the existing `SourceRouter(d)` call.
