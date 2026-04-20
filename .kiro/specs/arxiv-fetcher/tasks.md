@@ -63,7 +63,7 @@
   - _Boundary: application/arxiv_
 
 - [ ] 6. Core — HTTP layer
-- [ ] 6.1 (P) Implement the arxiv controller and response DTOs
+- [x] 6.1 (P) Implement the arxiv controller and response DTOs
   - Define `FetchResponse`, `EntryResponse`, and the `ToFetchResponse(entries, fetchedAt)` mapper inside the arxiv controller package; the domain layer must not carry any response DTOs.
   - Implement the `Fetch` handler to call `paper.UseCase.Fetch(c.Request.Context())`, pass errors to `c.Error(err)` without status mapping, and return `http.StatusOK` with `common.Data(ToFetchResponse(...))` on success.
   - Handler accepts no body and no query parameters; it inherits auth from the enclosing `/api` group.
@@ -102,3 +102,8 @@
   - The integration test file runs cleanly under the existing `integration` build tag, alongside the pre-existing source-aggregate integration tests.
   - _Requirements: 1.1, 1.2, 1.5, 4.1, 4.2, 4.3, 4.5_
   - _Depends: 7.1, 7.2_
+
+## Implementation Notes
+
+- 6.1 → 6.2: `NewArxivController(uc, clock)` takes `shared.Clock` as a second arg (added for deterministic `fetched_at` in tests). `route.Deps.Clock` already exists — `ArxivRouter(d)` must pass `d.Clock` when constructing the controller.
+- 2.1: viper `AutomaticEnv` does not flow env vars through `Unmarshal` on its own; `LoadEnv` now registers every mapstructure-tagged key via `BindEnv`. This matters for any future field added to `Env` — it must be added to the `BindEnv` loop or it will only be readable from `.env` files.
