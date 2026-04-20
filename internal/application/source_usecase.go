@@ -10,6 +10,11 @@ import (
 	domain "github.com/yoavweber/defi-monitor-backend/internal/domain/source"
 )
 
+// A Source is a configuration record mapping an external URL to a parsing type (e.g., RSS, API).
+// It dictates *what* to monitor, but contains no fetching logic itself.
+//
+// sourceUseCase manages CRUD operations for Source entities. It enforces domain 
+// rules (such as URL uniqueness) before persisting to the database.
 type sourceUseCase struct {
 	repo  domain.Repository
 	clock shared.Clock
