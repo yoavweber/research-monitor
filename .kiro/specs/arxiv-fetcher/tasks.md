@@ -85,7 +85,7 @@
   - Starting the service with a valid `.env` and issuing `GET /api/arxiv/fetch` with a valid `X-API-Token` returns a 200 response whose body is shaped like `FetchResponse` (with either real arxiv entries or an empty list, depending on upstream).
   - _Requirements: 1.1, 2.3, 3.1, 3.2_
 
-- [ ] 7.2 Extend the integration test harness
+- [x] 7.2 Extend the integration test harness
   - Teach `tests/integration/setup.SetupTestEnv` to accept an option that injects a fake `paper.Fetcher` and a fixed `paper.Query`, and to register `ArxivRouter` inside the same `/api` group that mounts the test `APIToken` middleware.
   - Add a hand-written `paper.Fetcher` fake in `tests/mocks/` that (a) records every `paper.Query` it receives, (b) returns a caller-configured `[]paper.Entry` or any of the three `paper.*` sentinels, and (c) counts invocations so tests can assert zero calls.
   - Calling the returned test server's `/api/arxiv/fetch` with the harness test token lands in the fake (observable by reading the fake's recorded-invocation counter from the test).
