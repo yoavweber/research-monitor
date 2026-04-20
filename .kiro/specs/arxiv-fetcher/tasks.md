@@ -53,7 +53,7 @@
   - _Requirements: 2.3, 2.4, 3.1, 3.2, 3.4, 4.1, 4.3, 4.4_
 
 - [ ] 5. Core — application use case
-- [ ] 5.1 (P) Implement the arxivUseCase orchestrator
+- [x] 5.1 (P) Implement the arxivUseCase orchestrator
   - Provide a constructor that takes a `paper.Fetcher`, a `shared.Logger`, and an immutable `paper.Query`, and returns a `paper.UseCase`.
   - On invocation, make exactly one call to the fetcher, log exactly one structured outcome line per call, and return whatever the fetcher returns (never re-wrap or re-classify sentinels).
   - Success log: `InfoContext("paper.fetch.ok", "source", "arxiv", "count", N, "categories", [...])`. Failure log: `WarnContext("paper.fetch.failed", "source", "arxiv", "category", "bad_status"|"malformed"|"unavailable", "err", err)`.
