@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
+	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/feedutil"
 )
 
 // parseFeed decodes arXiv's Atom feed into source-neutral paper.Entry values.
@@ -36,7 +37,7 @@ func parseFeed(body []byte) ([]paper.Entry, error) {
 
 		sourceID, version := splitAbsID(xe.ID)
 
-		submittedAt, err := parseAtomTime(xe.Published)
+		submittedAt, err := feedutil.ParseAtomTime(xe.Published)
 		if err != nil {
 			return nil, fmt.Errorf("%w: parse <published>: %v", paper.ErrUpstreamMalformed, err)
 		}
@@ -46,7 +47,7 @@ func parseFeed(body []byte) ([]paper.Entry, error) {
 		// fields" policy.
 		var updatedAt time.Time
 		if strings.TrimSpace(xe.Updated) != "" {
-			updatedAt, err = parseAtomTime(xe.Updated)
+			updatedAt, err = feedutil.ParseAtomTime(xe.Updated)
 			if err != nil {
 				return nil, fmt.Errorf("%w: parse <updated>: %v", paper.ErrUpstreamMalformed, err)
 			}
@@ -65,9 +66,9 @@ func parseFeed(body []byte) ([]paper.Entry, error) {
 		entries = append(entries, paper.Entry{
 			SourceID:        sourceID,
 			Version:         version,
-			Title:           normalizeSpace(xe.Title),
+			Title:           feedutil.NormalizeSpace(xe.Title),
 			Authors:         authors,
-			Abstract:        normalizeSpace(xe.Summary),
+			Abstract:        feedutil.NormalizeSpace(xe.Summary),
 			PrimaryCategory: xe.PrimaryCategory.Term,
 			Categories:      categories,
 			SubmittedAt:     submittedAt,
@@ -151,13 +152,4 @@ func pickPDFLink(links []xmlLink) string {
 	return ""
 }
 
-func parseAtomTime(s string) (time.Time, error) {
-	return time.Parse(time.RFC3339, strings.TrimSpace(s))
-}
 
-// normalizeSpace collapses internal whitespace in a free-text field (Atom
-// feeds frequently wrap <title> and <summary> across lines with leading
-// indentation).
-func normalizeSpace(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}

@@ -3,13 +3,13 @@ package arxiv
 import (
 	"context"
 	"errors"
-	"net"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/httpclient"
 )
 
 // arxivFetcher composes URL construction, a generic byte-level shared.Fetcher,
@@ -97,18 +97,7 @@ func translateTransportError(err error) error {
 	if errors.Is(err, shared.ErrBadStatus) {
 		return paper.ErrUpstreamBadStatus
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return paper.ErrUpstreamUnavailable
-	}
-	if errors.Is(err, context.Canceled) {
-		return paper.ErrUpstreamUnavailable
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return paper.ErrUpstreamUnavailable
-	}
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
+	if httpclient.IsTransportError(err) {
 		return paper.ErrUpstreamUnavailable
 	}
 	// Conservative catch-all: an unclassified transport error means "no
