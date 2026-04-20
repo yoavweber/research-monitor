@@ -44,8 +44,12 @@ type Extractor interface {
 	FromPDFURL(ctx context.Context, url string) (string, error)
 }
 
-// APIFetcher — generic port for JSON API ingestion sources (arXiv, governance forums).
-// Deferred: no concrete impl in v1. Defining the port now keeps the domain stable.
-type APIFetcher interface {
-	Fetch(ctx context.Context, endpoint string) ([]byte, error)
+// Fetcher is a generic byte-level HTTP GET port. Implementations return the
+// response body on 2xx. On non-2xx, the error wraps shared.ErrBadStatus via
+// fmt.Errorf("%w: status=%d", ErrBadStatus, code). On transport failure,
+// implementations return stdlib-identifiable errors (context.DeadlineExceeded,
+// *url.Error, ...). Higher layers translate these into their own error
+// vocabulary.
+type Fetcher interface {
+	Fetch(ctx context.Context, url string) ([]byte, error)
 }

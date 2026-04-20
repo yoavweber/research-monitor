@@ -35,3 +35,8 @@ func AsHTTPError(err error) *HTTPError {
 	}
 	return nil
 }
+
+// ErrBadStatus is a source-neutral sentinel that byte-level Fetcher
+// implementations wrap (via fmt.Errorf("%w: status=%d", ErrBadStatus, code))
+// to signal a non-2xx HTTP response. Adapters use errors.Is to identify it.
+var ErrBadStatus = errors.New("shared.fetch: upstream returned non-success status")

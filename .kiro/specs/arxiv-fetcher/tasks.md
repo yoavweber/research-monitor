@@ -8,7 +8,7 @@
   - `go build ./internal/domain/paper/...` compiles cleanly and the new types are importable from other layers.
   - _Requirements: 1.3, 2.3, 2.4, 3.2, 4.1, 4.2, 4.3_
 
-- [ ] 1.2 Rename the shared fetcher port and add the transport sentinel
+- [x] 1.2 Rename the shared fetcher port and add the transport sentinel
   - Rename the pre-existing `shared.APIFetcher` to `shared.Fetcher` and change its signature so it takes a URL string and returns `([]byte, error)`.
   - Update the port's doc comment to describe the generic byte-GET contract (URL in, bytes out; non-2xx wraps `shared.ErrBadStatus`; transport failures bubble up stdlib errors).
   - Add `shared.ErrBadStatus` as a sentinel `error` value in the shared errors file.
