@@ -16,7 +16,7 @@
   - _Requirements: 1.1, 4.1_
 
 - [ ] 2. Foundation — environment configuration
-- [ ] 2.1 Add arxiv environment variables with fail-fast validation
+- [x] 2.1 Add arxiv environment variables with fail-fast validation
   - Extend the bootstrap `Env` struct with `ARXIV_BASE_URL`, `ARXIV_CATEGORIES` (raw CSV + post-parse `[]string`), and `ARXIV_MAX_RESULTS`.
   - Teach `LoadEnv` to split the CSV, trim each element, drop empties, and fail with a descriptive error when the resulting list is empty.
   - Validate `ARXIV_MAX_RESULTS` lies in `[1, 30000]` and surface a clear error otherwise.
