@@ -3,11 +3,15 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
 	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	arxivinfra "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/arxiv"
+	httpinfra "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/http"
 	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/observability"
 	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence"
 	"github.com/yoavweber/defi-monitor-backend/internal/interface/http/middleware"
@@ -43,12 +47,31 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		middleware.ErrorEnvelope(),
 	)
 
+	// The byte fetcher owns the long-lived *http.Client (connection pooling)
+	// and the User-Agent arXiv sees on every outbound call. Contact URL in
+	// the UA is a courtesy for arXiv's operators per their API etiquette.
+	byteFetcher := httpinfra.NewByteFetcher(
+		15*time.Second,
+		"defi-monitor/1.0 (+https://github.com/yoavweber/defi-monitor-backend)",
+	)
+	arxivFetcher := arxivinfra.NewArxivFetcher(env.ArxivBaseURL, byteFetcher)
+	// Query is assembled once at startup so every request against this
+	// process sees the same validated category list and max_results.
+	query := paper.Query{
+		Categories: env.ArxivCategories,
+		MaxResults: env.ArxivMaxResults,
+	}
+
 	api := engine.Group("/api", middleware.APIToken(env.APIToken))
 	route.Setup(route.Deps{
 		Group:  api,
 		DB:     db,
 		Logger: logger,
 		Clock:  shared.SystemClock{},
+		Arxiv: route.ArxivConfig{
+			Fetcher: arxivFetcher,
+			Query:   query,
+		},
 	})
 
 	return &App{Env: env, DB: db, Engine: engine, Logger: logger}, nil

@@ -79,7 +79,7 @@
   - _Requirements: 1.1, 1.2_
 
 - [ ] 7. Integration — bootstrap wiring and test harness
-- [ ] 7.1 Compose the runtime pipeline in app bootstrap
+- [x] 7.1 Compose the runtime pipeline in app bootstrap
   - In `bootstrap/app.go`, construct the generic byte fetcher with a fixed timeout and a descriptive `User-Agent` that includes a contact URL.
   - Wrap the byte fetcher in the arxiv fetcher using `env.ArxivBaseURL`, assemble the immutable `paper.Query` from `env.ArxivCategories` and `env.ArxivMaxResults`, and pass both to `route.Setup` via `route.Deps.Arxiv`.
   - Starting the service with a valid `.env` and issuing `GET /api/arxiv/fetch` with a valid `X-API-Token` returns a 200 response whose body is shaped like `FetchResponse` (with either real arxiv entries or an empty list, depending on upstream).
