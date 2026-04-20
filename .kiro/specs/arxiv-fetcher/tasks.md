@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [ ] 1. Foundation — paper domain aggregate and shared port update
-- [ ] 1.1 Define the paper domain aggregate
+- [x] 1.1 Define the paper domain aggregate
   - Introduce `Entry` and `Query` value objects with the fields specified in design.md (source-neutral; `SourceID`, `Version`, `Categories`, `MaxResults`, etc.).
   - Define the `UseCase` and `Fetcher` ports.
   - Define the three upstream-failure sentinels (`ErrUpstreamBadStatus`, `ErrUpstreamMalformed`, `ErrUpstreamUnavailable`) as `*shared.HTTPError` values following the existing `source.ErrNotFound` pattern.
