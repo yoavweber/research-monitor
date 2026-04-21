@@ -18,15 +18,15 @@ import (
 // application layer; every failure exits as a paper.* sentinel.
 type arxivFetcher struct {
 	baseURL string
-	http    shared.Fetcher
+	client  shared.Fetcher
 }
 
 // NewArxivFetcher returns a paper.Fetcher backed by the arXiv query API.
 // baseURL should be the absolute URL of the arxiv query endpoint (in
-// production: "https://export.arxiv.org/api/query"). http is the injected
+// production: "https://export.arxiv.org/api/query"). client is the injected
 // byte-level fetcher used for the outbound call.
-func NewArxivFetcher(baseURL string, http shared.Fetcher) paper.Fetcher {
-	return &arxivFetcher{baseURL: baseURL, http: http}
+func NewArxivFetcher(baseURL string, client shared.Fetcher) paper.Fetcher {
+	return &arxivFetcher{baseURL: baseURL, client: client}
 }
 
 // Fetch builds an arxiv-specific query URL from the source-neutral paper.Query,
@@ -43,7 +43,7 @@ func (a *arxivFetcher) Fetch(ctx context.Context, q paper.Query) ([]paper.Entry,
 		return nil, paper.ErrUpstreamUnavailable
 	}
 
-	body, err := a.http.Fetch(ctx, u)
+	body, err := a.client.Fetch(ctx, u)
 	if err != nil {
 		return nil, translateTransportError(err)
 	}
