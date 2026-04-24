@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/yoavweber/defi-monitor-backend/tests/integration/setup"
+	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 )
 
 func postJSON(t *testing.T, url, token string, body any) *http.Response {

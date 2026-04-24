@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/bootstrap"
+	"github.com/yoavweber/research-monitor/backend/internal/bootstrap"
 )
 
 func main() {

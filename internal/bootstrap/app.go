@@ -8,14 +8,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	arxivinfra "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/arxiv"
-	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/httpclient"
-	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/observability"
-	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence"
-	"github.com/yoavweber/defi-monitor-backend/internal/http/middleware"
-	"github.com/yoavweber/defi-monitor-backend/internal/http/route"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	arxivinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
+	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
+	"github.com/yoavweber/research-monitor/backend/internal/http/route"
 )
 
 type App struct {
@@ -52,7 +52,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	// the UA is a courtesy for arXiv's operators per their API etiquette.
 	byteFetcher := httpclient.NewByteFetcher(
 		15*time.Second,
-		"defi-monitor/1.0 (+https://github.com/yoavweber/defi-monitor-backend)",
+		"defi-monitor/1.0 (+https://github.com/yoavweber/research-monitor/backend)",
 	)
 	arxivFetcher := arxivinfra.NewArxivFetcher(env.ArxivBaseURL, byteFetcher)
 	// Query is assembled once at startup so every request against this

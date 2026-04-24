@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 func Logger(log shared.Logger) gin.HandlerFunc {

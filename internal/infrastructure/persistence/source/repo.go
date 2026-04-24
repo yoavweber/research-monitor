@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	domain "github.com/yoavweber/defi-monitor-backend/internal/domain/source"
+	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
 )
 
 type repository struct{ db *gorm.DB }

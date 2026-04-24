@@ -7,7 +7,7 @@ package arxiv
 import (
 	"time"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 )
 
 // FetchResponse is the top-level wire shape for GET /api/arxiv/fetch. It is

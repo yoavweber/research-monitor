@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/httpclient"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 )
 
 // arxivFetcher composes URL construction, a generic byte-level shared.Fetcher,

@@ -4,8 +4,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 // ArxivConfig is the feature-scoped sub-bundle passed through route.Deps to

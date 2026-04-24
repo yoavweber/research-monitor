@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 func TestErrBadStatus_IsNonNilError(t *testing.T) {

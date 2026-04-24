@@ -8,8 +8,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 // arxivUseCase is the thin orchestrator that satisfies paper.UseCase for the

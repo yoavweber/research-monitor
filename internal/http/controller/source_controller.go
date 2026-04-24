@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	domain "github.com/yoavweber/defi-monitor-backend/internal/domain/source"
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	"github.com/yoavweber/defi-monitor-backend/internal/http/common"
+	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 )
 
 type SourceController struct{ uc domain.UseCase }

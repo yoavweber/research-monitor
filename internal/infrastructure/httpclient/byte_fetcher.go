@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 // byteFetcher is the concrete shared.Fetcher implementation. It holds a

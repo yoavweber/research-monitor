@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 // fakeFetcher is an inline stub of shared.Fetcher. It captures the URL it was

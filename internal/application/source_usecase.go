@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	domain "github.com/yoavweber/defi-monitor-backend/internal/domain/source"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
 )
 
 // A Source is a configuration record mapping an external URL to a parsing type (e.g., RSS, API).

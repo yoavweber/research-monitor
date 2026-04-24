@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
-	"github.com/yoavweber/defi-monitor-backend/internal/infrastructure/feedutil"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/feedutil"
 )
 
 // parseFeed decodes arXiv's Atom feed into source-neutral paper.Entry values.

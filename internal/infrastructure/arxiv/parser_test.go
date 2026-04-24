@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 )
 
 func TestParseFeed_Happy(t *testing.T) {

@@ -1,8 +1,8 @@
 package route
 
 import (
-	arxivapp "github.com/yoavweber/defi-monitor-backend/internal/application/arxiv"
-	arxivctrl "github.com/yoavweber/defi-monitor-backend/internal/http/controller/arxiv"
+	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
+	arxivctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/arxiv"
 )
 
 // ArxivRouter wires the arxiv fetch endpoint. It builds the use case and

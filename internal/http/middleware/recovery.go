@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
-	"github.com/yoavweber/defi-monitor-backend/internal/http/common"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 )
 
 func Recovery(log shared.Logger) gin.HandlerFunc {

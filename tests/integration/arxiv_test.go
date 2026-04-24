@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
-	"github.com/yoavweber/defi-monitor-backend/tests/integration/setup"
-	"github.com/yoavweber/defi-monitor-backend/tests/mocks"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
+	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
 
 // arxivCategories mirrors the configured categories a realistic deployment

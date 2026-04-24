@@ -5,7 +5,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 )
 
 // PaperFetcher is a hand-written paper.Fetcher fake for integration tests.
