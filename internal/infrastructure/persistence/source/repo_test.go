@@ -11,9 +11,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	domain "github.com/yoavweber/defi-monitor-backend/internal/domain/source"
-	persistence "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence"
-	sourcerepo "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence/source"
+	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
+	persistence "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
+	sourcerepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
 )
 
 func newTestDB(t *testing.T) *gorm.DB {

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 type slogLogger struct{ l *slog.Logger }

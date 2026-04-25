@@ -1,4 +1,4 @@
-module github.com/yoavweber/defi-monitor-backend
+module github.com/yoavweber/research-monitor/backend
 
 go 1.25.3
 

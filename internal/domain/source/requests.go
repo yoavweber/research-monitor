@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
 type CreateRequest struct {

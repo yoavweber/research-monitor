@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yoavweber/defi-monitor-backend/internal/application"
-	domain "github.com/yoavweber/defi-monitor-backend/internal/domain/source"
+	"github.com/yoavweber/research-monitor/backend/internal/application"
+	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
 )
 
 // fakeRepo is a hand-rolled in-memory Repository for unit tests.

@@ -5,7 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
-	sourcemodel "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/persistence/source"
+	sourcemodel "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
 )
 
 // AutoMigrate runs GORM AutoMigrate over every persistence model in the repo.

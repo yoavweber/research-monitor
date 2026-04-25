@@ -3,7 +3,7 @@ package source
 import (
 	"time"
 
-	domain "github.com/yoavweber/defi-monitor-backend/internal/domain/source"
+	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
 )
 
 type Source struct {

@@ -808,8 +808,8 @@ func ToFetchResponse(entries []paper.Entry, fetchedAt time.Time) FetchResponse
 package route
 
 import (
-    arxivapp "github.com/yoavweber/defi-monitor-backend/internal/application/arxiv"
-    arxivctrl "github.com/yoavweber/defi-monitor-backend/internal/interface/http/controller/arxiv"
+    arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
+    arxivctrl "github.com/yoavweber/research-monitor/backend/internal/interface/http/controller/arxiv"
 )
 
 func ArxivRouter(d Deps) {
@@ -873,11 +873,11 @@ type Env struct {
 ```go
 // internal/bootstrap/app.go (excerpt)
 import (
-    httpinfra  "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/http"
-    arxivinfra "github.com/yoavweber/defi-monitor-backend/internal/infrastructure/arxiv"
+    httpinfra  "github.com/yoavweber/research-monitor/backend/internal/infrastructure/http"
+    arxivinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
 )
 
-byteFetcher  := httpinfra.NewByteFetcher(15*time.Second, "defi-monitor/1.0 (+https://github.com/yoavweber/defi-monitor-backend)")
+byteFetcher  := httpinfra.NewByteFetcher(15*time.Second, "defi-monitor/1.0 (+https://github.com/yoavweber/research-monitor/backend)")
 arxivFetcher := arxivinfra.NewArxivFetcher(env.ArxivBaseURL, byteFetcher)
 query := paper.Query{
     Categories: env.ArxivCategories,
