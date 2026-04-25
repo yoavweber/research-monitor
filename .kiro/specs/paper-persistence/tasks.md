@@ -10,8 +10,8 @@
   - `go build ./internal/domain/paper/...` succeeds; sentinel tests pass; all downstream callers of the deleted `paper.UseCase` in the current tree surface as clean compile errors (they will be repaired by tasks 5.1, 6.1, 6.2, 7.1).
   - _Requirements: 1.3, 1.4, 1.5, 2.2, 5.4, 5.5_
 
-- [ ] 2. Core — persistence adapter
-- [ ] 2.1 (P) Implement paper.Repository on SQLite with composite-unique-index dedupe + sentinel translation
+- [x] 2. Core — persistence adapter
+- [x] 2.1 (P) Implement paper.Repository on SQLite with composite-unique-index dedupe + sentinel translation
   - New package `internal/infrastructure/persistence/paper/`. Persistence model `Paper` with every domain field mapped; `Authors` and `Categories` stored as JSON-encoded text since SQLite has no native array type; `submitted_at` indexed for the list's ORDER BY.
   - The composite uniqueness invariant is declared via GORM struct tags — `Source` and `SourceID` both carry `uniqueIndex:idx_papers_source_source_id` — so the DB creates the index during `AutoMigrate` and rejects duplicates atomically. The `// DEDUPE:` marker from design §Infrastructure Layer is preserved in the source.
   - `FromDomain` / `ToDomain` round-trip every field including the slices.
