@@ -10,7 +10,7 @@ import (
 // paths. Auth is supplied by the APIToken middleware already mounted on
 // the /api group.
 func PaperRouter(d Deps) {
-	ctrl := paperctrl.NewPaperController(d.Paper.Repo, d.Clock)
+	ctrl := paperctrl.NewPaperController(d.Paper.Repo)
 
 	g := d.Group.Group("/papers")
 	g.GET("", ctrl.List)

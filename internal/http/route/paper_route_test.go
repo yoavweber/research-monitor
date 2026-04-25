@@ -58,38 +58,31 @@ func newPaperEngine(repo paper.Repository) *gin.Engine {
 	return engine
 }
 
-// TestPaperRouter_RegistersListEndpoint verifies GET /api/papers reaches
-// the controller and returns 200 with the repo's (possibly empty) result.
-// Requirements 2.1, 3.1: the route is registered and routes through to the
-// list handler.
-func TestPaperRouter_RegistersListEndpoint(t *testing.T) {
+// TestPaperRouter_RegistersEndpoints verifies both /api/papers routes are
+// wired through to the controller and that sentinel errors flow through
+// ErrorEnvelope. Requirements 2.1, 2.3, 3.1, 3.4, 5.2.
+func TestPaperRouter_RegistersEndpoints(t *testing.T) {
 	t.Parallel()
 
-	repo := &fakePaperRepo{listEntries: []paper.Entry{}}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/papers", nil)
-	w := httptest.NewRecorder()
-	newPaperEngine(repo).ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("GET /api/papers: status=%d, want 200; body=%s", w.Code, w.Body.String())
+	cases := []struct {
+		name       string
+		path       string
+		repo       *fakePaperRepo
+		wantStatus int
+	}{
+		{"List_OK", "/api/papers", &fakePaperRepo{listEntries: []paper.Entry{}}, http.StatusOK},
+		{"Get_NotFound", "/api/papers/arxiv/x", &fakePaperRepo{findErr: paper.ErrNotFound}, http.StatusNotFound},
 	}
-}
 
-// TestPaperRouter_RegistersGetEndpoint_NotFound verifies GET /api/papers/
-// :source/:source_id reaches the controller, that paper.ErrNotFound from
-// the repo flows through c.Error → ErrorEnvelope, and that the resulting
-// status is 404. Requirements 2.3, 3.4, 5.2.
-func TestPaperRouter_RegistersGetEndpoint_NotFound(t *testing.T) {
-	t.Parallel()
-
-	repo := &fakePaperRepo{findErr: paper.ErrNotFound}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/papers/arxiv/x", nil)
-	w := httptest.NewRecorder()
-	newPaperEngine(repo).ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("GET /api/papers/arxiv/x: status=%d, want 404; body=%s", w.Code, w.Body.String())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			newPaperEngine(tc.repo).ServeHTTP(w, req)
+			if w.Code != tc.wantStatus {
+				t.Fatalf("GET %s: status=%d, want %d; body=%s", tc.path, w.Code, tc.wantStatus, w.Body.String())
+			}
+		})
 	}
 }

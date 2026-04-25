@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 )
 
 // TestNewApp_WiresArxivRoute verifies that NewApp assembles the runtime
@@ -45,7 +47,7 @@ func TestNewApp_WiresArxivRoute(t *testing.T) {
 	// was reached but the use case hit a nil Fetcher — the bootstrap is
 	// missing the arxiv wiring this task introduces.
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/fetch", nil)
-	req.Header.Set("X-API-Token", env.APIToken)
+	req.Header.Set(middleware.APITokenHeader, env.APIToken)
 	w := httptest.NewRecorder()
 	app.Engine.ServeHTTP(w, req)
 
@@ -99,7 +101,7 @@ func TestNewApp_WiresPaperRoutes(t *testing.T) {
 	// the papers table exists. A 500 here means the migration did not
 	// include the papers table or the repo was not threaded into Deps.
 	reqList := httptest.NewRequest(http.MethodGet, "/api/papers", nil)
-	reqList.Header.Set("X-API-Token", env.APIToken)
+	reqList.Header.Set(middleware.APITokenHeader, env.APIToken)
 	wList := httptest.NewRecorder()
 	app.Engine.ServeHTTP(wList, reqList)
 	if wList.Code != http.StatusOK {
@@ -117,7 +119,7 @@ func TestNewApp_WiresPaperRoutes(t *testing.T) {
 	// not 500: the repo's ErrNotFound has to flow through the controller and
 	// the ErrorEnvelope middleware that NewApp mounts on the engine.
 	reqGet := httptest.NewRequest(http.MethodGet, "/api/papers/arxiv/unknown", nil)
-	reqGet.Header.Set("X-API-Token", env.APIToken)
+	reqGet.Header.Set(middleware.APITokenHeader, env.APIToken)
 	wGet := httptest.NewRecorder()
 	app.Engine.ServeHTTP(wGet, reqGet)
 	if wGet.Code != http.StatusNotFound {

@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 )
 
@@ -21,7 +23,7 @@ import (
 func doAuthenticatedGet(t *testing.T, url string) *http.Response {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("X-API-Token", setup.TestToken)
+	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -69,77 +71,41 @@ type paperWire struct {
 	AbsURL          string    `json:"abs_url"`
 }
 
-// TestPapers_Get_401_MissingToken covers requirement 2.1 (auth on Get):
-// the APIToken middleware MUST short-circuit before the repo is touched.
-func TestPapers_Get_401_MissingToken(t *testing.T) {
+// TestPapers_401 covers R2.1 (auth on Get) and R3.1 (auth on List): the
+// APIToken middleware MUST short-circuit before the repo is touched whether
+// the token is missing or wrong.
+func TestPapers_401(t *testing.T) {
 	t.Parallel()
 	env := setup.SetupTestEnv(t)
-	defer env.Close()
+	t.Cleanup(env.Close) // parallel subtests outlive a deferred close on the parent
 
-	resp, err := http.Get(env.Server.URL + "/api/papers/arxiv/2404.12345")
-	if err != nil {
-		t.Fatalf("request: %v", err)
+	cases := []struct {
+		name  string
+		path  string
+		token string // empty = no header
+	}{
+		{"Get_MissingToken", "/api/papers/arxiv/2404.12345", ""},
+		{"Get_InvalidToken", "/api/papers/arxiv/2404.12345", "wrong-token"},
+		{"List_MissingToken", "/api/papers", ""},
+		{"List_InvalidToken", "/api/papers", "wrong-token"},
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d want 401", resp.StatusCode)
-	}
-}
-
-// TestPapers_Get_401_InvalidToken covers requirement 2.1 again: a wrong
-// token is rejected with 401, indistinguishable from a missing one.
-func TestPapers_Get_401_InvalidToken(t *testing.T) {
-	t.Parallel()
-	env := setup.SetupTestEnv(t)
-	defer env.Close()
-
-	req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/papers/arxiv/2404.12345", nil)
-	req.Header.Set("X-API-Token", "wrong-token")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d want 401", resp.StatusCode)
-	}
-}
-
-// TestPapers_List_401_MissingToken covers requirement 3.1 (auth on List).
-func TestPapers_List_401_MissingToken(t *testing.T) {
-	t.Parallel()
-	env := setup.SetupTestEnv(t)
-	defer env.Close()
-
-	resp, err := http.Get(env.Server.URL + "/api/papers")
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d want 401", resp.StatusCode)
-	}
-}
-
-// TestPapers_List_401_InvalidToken covers requirement 3.1 (auth on List).
-func TestPapers_List_401_InvalidToken(t *testing.T) {
-	t.Parallel()
-	env := setup.SetupTestEnv(t)
-	defer env.Close()
-
-	req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/papers", nil)
-	req.Header.Set("X-API-Token", "wrong-token")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d want 401", resp.StatusCode)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req, _ := http.NewRequest(http.MethodGet, env.Server.URL+tc.path, nil)
+			if tc.token != "" {
+				req.Header.Set(middleware.APITokenHeader, tc.token)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d want 401", resp.StatusCode)
+			}
+		})
 	}
 }
 
@@ -234,7 +200,7 @@ func TestPapers_Get_AllFields(t *testing.T) {
 	if got.Title != entry.Title {
 		t.Errorf("title = %q want %q", got.Title, entry.Title)
 	}
-	if !equalStrings(got.Authors, entry.Authors) {
+	if !slices.Equal(got.Authors, entry.Authors) {
 		t.Errorf("authors = %v want %v", got.Authors, entry.Authors)
 	}
 	if got.Abstract != entry.Abstract {
@@ -243,7 +209,7 @@ func TestPapers_Get_AllFields(t *testing.T) {
 	if got.PrimaryCategory != entry.PrimaryCategory {
 		t.Errorf("primary_category = %q want %q", got.PrimaryCategory, entry.PrimaryCategory)
 	}
-	if !equalStrings(got.Categories, entry.Categories) {
+	if !slices.Equal(got.Categories, entry.Categories) {
 		t.Errorf("categories = %v want %v", got.Categories, entry.Categories)
 	}
 	if !got.SubmittedAt.Equal(entry.SubmittedAt) {
@@ -425,17 +391,3 @@ func TestPapers_CompositeKey_DistinctSources(t *testing.T) {
 	}
 }
 
-// equalStrings is a local helper because importing reflect just for one
-// slice comparison adds noise; behaviourally we only care about same
-// length and same element ordering, which the repo preserves verbatim.
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}

@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 )
 
@@ -22,15 +21,11 @@ import (
 // owns that translation off the *shared.HTTPError sentinels declared in the
 // paper domain package.
 type PaperController struct {
-	repo  paper.Repository
-	clock shared.Clock
+	repo paper.Repository
 }
 
-// NewPaperController returns the controller with its repository and clock
-// dependencies. The clock is currently unused but kept for symmetry with the
-// arxiv controller — adding ceremony to remove it costs more than carrying it.
-func NewPaperController(repo paper.Repository, clock shared.Clock) *PaperController {
-	return &PaperController{repo: repo, clock: clock}
+func NewPaperController(repo paper.Repository) *PaperController {
+	return &PaperController{repo: repo}
 }
 
 // Get handles GET /api/papers/:source/:source_id. Path params are pulled via

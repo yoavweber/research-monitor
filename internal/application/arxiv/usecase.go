@@ -54,7 +54,7 @@ func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, e
 	entries, err := u.fetcher.Fetch(ctx, u.query)
 	if err != nil {
 		u.log.WarnContext(ctx, "paper.fetch.failed",
-			"source", "arxiv",
+			"source", paper.SourceArxiv,
 			"category", classify(err),
 			"err", err)
 		return nil, err
@@ -68,7 +68,7 @@ func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, e
 			// Repository already typed this as paper.ErrCatalogueUnavailable;
 			// relay verbatim so the HTTP layer maps it to its sentinel status.
 			u.log.ErrorContext(ctx, "paper.fetch.persist_failed",
-				"source", "arxiv",
+				"source", paper.SourceArxiv,
 				"source_id", e.SourceID,
 				"err", saveErr)
 			return nil, saveErr
@@ -82,7 +82,7 @@ func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, e
 	}
 
 	u.log.InfoContext(ctx, "paper.fetch.ok",
-		"source", "arxiv",
+		"source", paper.SourceArxiv,
 		"count", len(entries),
 		"new", newCount,
 		"skipped", skippedCount,

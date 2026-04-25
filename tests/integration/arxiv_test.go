@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
@@ -34,7 +35,7 @@ func arxivQuery() paper.Query {
 func doAuthenticatedFetch(t *testing.T, env *setup.TestEnv) *http.Response {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/arxiv/fetch", nil)
-	req.Header.Set("X-API-Token", setup.TestToken)
+	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -371,7 +372,7 @@ func TestArxivIntegration_401_InvalidToken(t *testing.T) {
 	defer env.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/arxiv/fetch", nil)
-	req.Header.Set("X-API-Token", "wrong-token")
+	req.Header.Set(middleware.APITokenHeader, "wrong-token")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)

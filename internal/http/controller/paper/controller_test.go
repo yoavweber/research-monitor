@@ -51,15 +51,6 @@ func (f *fakeRepo) List(_ context.Context) ([]domainpaper.Entry, error) {
 	return f.listEntries, f.listErr
 }
 
-// fixedClock implements shared.Clock with a pre-set time. The controller does
-// not consult it today, but injecting it keeps the constructor symmetric with
-// the arxiv controller.
-type fixedClock struct {
-	now time.Time
-}
-
-func (c fixedClock) Now() time.Time { return c.now }
-
 // newEngine wires an in-memory Gin engine with the error envelope middleware
 // so sentinel-translation tests see the same rendering as production.
 func newEngine(ctrl *PaperController) *gin.Engine {
@@ -90,7 +81,7 @@ func sampleEntry() domainpaper.Entry {
 }
 
 func newController(repo domainpaper.Repository) *PaperController {
-	return NewPaperController(repo, fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)})
+	return NewPaperController(repo)
 }
 
 func TestPaperController_Get_Hit_ReturnsAllTwelveFields(t *testing.T) {

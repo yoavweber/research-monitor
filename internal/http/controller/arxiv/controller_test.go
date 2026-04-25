@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -232,7 +233,7 @@ func TestArxivController_Empty_Returns_NonNull_EmptyArray(t *testing.T) {
 	// Raw body check: the wire must contain "entries":[] not "entries":null.
 	// This is critical for requirement 1.5.
 	raw := w.Body.String()
-	if !containsJSONToken(raw, `"entries":[]`) {
+	if !strings.Contains(raw, `"entries":[]`) {
 		t.Fatalf("response body must contain \"entries\":[] (non-null empty array); body=%s", raw)
 	}
 
@@ -251,21 +252,6 @@ func TestArxivController_Empty_Returns_NonNull_EmptyArray(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("data.entries length=%d, want 0", len(entries))
 	}
-}
-
-// containsJSONToken is a light substring helper; used for the critical empty-array
-// wire-shape check where map decoding hides the null-vs-empty distinction.
-func containsJSONToken(haystack, needle string) bool {
-	return len(needle) > 0 && indexOf(haystack, needle) >= 0
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 func TestArxivController_BadStatus_Returns502(t *testing.T) {
