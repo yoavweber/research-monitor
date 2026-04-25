@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Foundation — paper domain extensions
-- [ ] 1.1 Extend paper.Entry, introduce the Repository port, define sentinels, delete the speculative UseCase
+- [x] 1. Foundation — paper domain extensions
+- [x] 1.1 Extend paper.Entry, introduce the Repository port, define sentinels, delete the speculative UseCase
   - Add a `Source string` field to `paper.Entry` alongside the existing fields.
   - Delete the speculative `paper.UseCase` interface from `domain/paper/ports.go` (arxiv is its only consumer and that consumer is being migrated to an arxiv-application-local `OutcomeFetcher` in a later task).
   - Introduce `paper.Repository` with three methods — `Save(ctx, Entry) (isNew bool, err error)`, `FindByKey(ctx, source, sourceID string) (*Entry, error)`, `List(ctx) ([]Entry, error)` — with the doc-comments from design §Domain Layer, including the `DEDUPE:` marker on `Save` and the explicit note that the repository owns sentinel translation (returns `paper.ErrNotFound` on miss, `paper.ErrCatalogueUnavailable` on any other DB failure).

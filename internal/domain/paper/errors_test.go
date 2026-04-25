@@ -57,3 +57,37 @@ func TestErrUpstreamUnavailable(t *testing.T) {
 		t.Errorf("shared.AsHTTPError(ErrUpstreamUnavailable) = %v, want same pointer as sentinel", got)
 	}
 }
+
+func TestErrNotFound(t *testing.T) {
+	t.Parallel()
+
+	if paper.ErrNotFound == nil {
+		t.Fatal("ErrNotFound must not be nil")
+	}
+	if got, want := paper.ErrNotFound.Code, 404; got != want {
+		t.Errorf("ErrNotFound.Code = %d, want %d", got, want)
+	}
+	if got, want := paper.ErrNotFound.Message, "paper not found"; got != want {
+		t.Errorf("ErrNotFound.Message = %q, want %q", got, want)
+	}
+	if got := shared.AsHTTPError(paper.ErrNotFound); got != paper.ErrNotFound {
+		t.Errorf("shared.AsHTTPError(ErrNotFound) = %v, want same pointer as sentinel", got)
+	}
+}
+
+func TestErrCatalogueUnavailable(t *testing.T) {
+	t.Parallel()
+
+	if paper.ErrCatalogueUnavailable == nil {
+		t.Fatal("ErrCatalogueUnavailable must not be nil")
+	}
+	if got, want := paper.ErrCatalogueUnavailable.Code, 500; got != want {
+		t.Errorf("ErrCatalogueUnavailable.Code = %d, want %d", got, want)
+	}
+	if got, want := paper.ErrCatalogueUnavailable.Message, "paper catalogue unavailable"; got != want {
+		t.Errorf("ErrCatalogueUnavailable.Message = %q, want %q", got, want)
+	}
+	if got := shared.AsHTTPError(paper.ErrCatalogueUnavailable); got != paper.ErrCatalogueUnavailable {
+		t.Errorf("shared.AsHTTPError(ErrCatalogueUnavailable) = %v, want same pointer as sentinel", got)
+	}
+}

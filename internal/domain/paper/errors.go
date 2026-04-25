@@ -14,3 +14,8 @@ var (
 	ErrUpstreamMalformed   = shared.NewHTTPError(http.StatusBadGateway, "paper source returned malformed response", nil)
 	ErrUpstreamUnavailable = shared.NewHTTPError(http.StatusGatewayTimeout, "paper source unavailable", nil)
 )
+
+var (
+	ErrNotFound             = shared.NewHTTPError(http.StatusNotFound, "paper not found", nil)
+	ErrCatalogueUnavailable = shared.NewHTTPError(http.StatusInternalServerError, "paper catalogue unavailable", nil)
+)
