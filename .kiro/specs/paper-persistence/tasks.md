@@ -80,7 +80,7 @@
   - _Requirements: 2.1, 2.3, 3.1, 3.4, 5.2_
   - _Depends: 4.1, 5.1, 5.2_
 
-- [ ] 7. Integration — bootstrap and test harness
+- [x] 7. Integration — bootstrap and test harness
 - [x] 7.1 (P) Wire the paper repository pipeline into bootstrap
   - In `internal/bootstrap/app.go`, after `persistence.AutoMigrate(db)` (which now includes the `papers` table):
     - Construct `paperRepo := paperpersist.NewRepository(db)`.
@@ -93,7 +93,7 @@
   - _Boundary: bootstrap_
   - _Depends: 2.1, 3.1, 6.1_
 
-- [ ] 7.2 (P) Extend the integration test harness with a repository injection point
+- [x] 7.2 (P) Extend the integration test harness with a repository injection point
   - In `tests/integration/setup/setup.go`, extend `TestEnvOpts` with a nullable `PaperRepo paper.Repository`. When `nil`, the harness builds a real repository on top of the temp SQLite DB (same DB the harness already sets up for `source` tests). When provided, the harness uses the injected one verbatim — enables failure-injection for R5.5 integration tests.
   - The harness registers `PaperRouter(d)` on the `/api` group (same group that already mounts `ArxivRouter` and the `APIToken` middleware) and threads the repo through as `Deps.Paper.Repo`. The arxiv use case constructed inside `ArxivRouter` automatically receives the same repo via `Deps.Paper.Repo`.
   - Expose the built-or-injected repo on the returned `TestEnv` so tests can verify persisted state directly when useful.
