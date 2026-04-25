@@ -14,6 +14,7 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
+	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/http/route"
 )
@@ -62,6 +63,11 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		MaxResults: env.ArxivMaxResults,
 	}
 
+	// One persisted catalogue is shared by every router: the arxiv use case
+	// (fetch+persist) and the source-neutral /api/papers reads must observe
+	// the same rows, so the repo is constructed once here and threaded in.
+	paperRepo := paperpersist.NewRepository(db)
+
 	api := engine.Group("/api", middleware.APIToken(env.APIToken))
 	route.Setup(route.Deps{
 		Group:  api,
@@ -72,6 +78,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 			Fetcher: arxivFetcher,
 			Query:   query,
 		},
+		Paper: route.PaperConfig{Repo: paperRepo},
 	})
 
 	return &App{Env: env, DB: db, Engine: engine, Logger: logger}, nil

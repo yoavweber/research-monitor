@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +66,70 @@ func TestNewApp_WiresArxivRoute(t *testing.T) {
 	app.Engine.ServeHTTP(wNoAuth, reqNoAuth)
 	if wNoAuth.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/arxiv/fetch without token: got %d, want 401; body=%s", wNoAuth.Code, wNoAuth.Body.String())
+	}
+}
+
+// TestNewApp_WiresPaperRoutes verifies the source-neutral /api/papers
+// pipeline: NewApp must construct the persisted paper repository, thread it
+// into route.Deps.Paper, and AutoMigrate the papers table so a freshly
+// migrated DB serves an empty list (200) and a missing key returns 404.
+//
+// Requirements exercised: 4.3 / 4.4 (migration runs against a fresh schema
+// so reads succeed), 5.1 (auth middleware still gates the route).
+//
+// This test mutates process-wide env via t.Setenv; it cannot use t.Parallel.
+func TestNewApp_WiresPaperRoutes(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("SQLITE_PATH", filepath.Join(t.TempDir(), "test.db"))
+	t.Setenv("ARXIV_CATEGORIES", "cs.LG")
+	t.Setenv("ARXIV_MAX_RESULTS", "1")
+
+	env, err := LoadEnv()
+	if err != nil {
+		t.Fatalf("LoadEnv: %v", err)
+	}
+
+	app, err := NewApp(context.Background(), env)
+	if err != nil {
+		t.Fatalf("NewApp: %v", err)
+	}
+
+	// Authenticated list against an empty (just-migrated) catalogue must
+	// return 200 with the empty-array shape — proves the repo is wired and
+	// the papers table exists. A 500 here means the migration did not
+	// include the papers table or the repo was not threaded into Deps.
+	reqList := httptest.NewRequest(http.MethodGet, "/api/papers", nil)
+	reqList.Header.Set("X-API-Token", env.APIToken)
+	wList := httptest.NewRecorder()
+	app.Engine.ServeHTTP(wList, reqList)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("GET /api/papers: status=%d, want 200; body=%s", wList.Code, wList.Body.String())
+	}
+	body := wList.Body.String()
+	if !strings.Contains(body, `"papers":[]`) {
+		t.Fatalf(`GET /api/papers body must contain "papers":[]; got=%s`, body)
+	}
+	if !strings.Contains(body, `"count":0`) {
+		t.Fatalf(`GET /api/papers body must contain "count":0; got=%s`, body)
+	}
+
+	// Authenticated lookup for a key that does not exist must surface as 404,
+	// not 500: the repo's ErrNotFound has to flow through the controller and
+	// the ErrorEnvelope middleware that NewApp mounts on the engine.
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/papers/arxiv/unknown", nil)
+	reqGet.Header.Set("X-API-Token", env.APIToken)
+	wGet := httptest.NewRecorder()
+	app.Engine.ServeHTTP(wGet, reqGet)
+	if wGet.Code != http.StatusNotFound {
+		t.Fatalf("GET /api/papers/arxiv/unknown: status=%d, want 404; body=%s", wGet.Code, wGet.Body.String())
+	}
+
+	// Auth still gates the route: missing token must be rejected at the
+	// middleware layer before the controller runs.
+	reqNoAuth := httptest.NewRequest(http.MethodGet, "/api/papers", nil)
+	wNoAuth := httptest.NewRecorder()
+	app.Engine.ServeHTTP(wNoAuth, reqNoAuth)
+	if wNoAuth.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /api/papers without token: got %d, want 401; body=%s", wNoAuth.Code, wNoAuth.Body.String())
 	}
 }

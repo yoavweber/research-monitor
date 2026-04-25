@@ -81,7 +81,7 @@
   - _Depends: 4.1, 5.1, 5.2_
 
 - [ ] 7. Integration — bootstrap and test harness
-- [ ] 7.1 (P) Wire the paper repository pipeline into bootstrap
+- [x] 7.1 (P) Wire the paper repository pipeline into bootstrap
   - In `internal/bootstrap/app.go`, after `persistence.AutoMigrate(db)` (which now includes the `papers` table):
     - Construct `paperRepo := paperpersist.NewRepository(db)`.
     - Thread `paperRepo` into `route.Deps` as `Paper: route.PaperConfig{Repo: paperRepo}`.
