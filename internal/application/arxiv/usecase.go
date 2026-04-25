@@ -1,7 +1,8 @@
-// Package arxiv implements paper.UseCase for the arXiv source. It is a pure
-// orchestrator: it invokes a paper.Fetcher, logs the outcome, and relays
-// paper.* sentinels unchanged. It never inspects HTTP status codes, bytes,
-// XML, URLs, or transport-level errors.
+// Package arxiv implements the arxiv-side fetch+persist orchestrator. It is a
+// pure orchestrator: it invokes a paper.Fetcher, persists each returned entry
+// through paper.Repository, and surfaces per-entry is_new outcomes to its
+// caller. It never inspects HTTP status codes, bytes, XML, URLs, or
+// transport-level errors; paper.* sentinels are relayed verbatim.
 package arxiv
 
 import (
@@ -12,27 +13,44 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
-// arxivUseCase is the thin orchestrator that satisfies paper.UseCase for the
-// arXiv source. It holds an immutable copy of the paper.Query so every call
-// against a given instance is deterministic at the domain boundary.
+// FetchedEntry pairs a fetched domain Entry with the save-side outcome the
+// HTTP layer needs to annotate in its response. This type is arxiv-application-
+// specific by design — it does not belong in the source-neutral paper domain,
+// because is_new is a per-fetch persistence artefact, not a property of the
+// paper itself.
+type FetchedEntry struct {
+	Entry paper.Entry
+	IsNew bool
+}
+
+// OutcomeFetcher is the narrow interface the arxiv HTTP controller depends on.
+// arxivUseCase implements it. Defined here (not in domain/paper) so the type
+// stays adjacent to its sole implementation and its sole consumer category.
+type OutcomeFetcher interface {
+	FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, error)
+}
+
+// arxivUseCase orchestrates the arxiv fetch + per-entry persist sequence. It
+// holds an immutable copy of paper.Query so every call against a given
+// instance is deterministic at the domain boundary.
 type arxivUseCase struct {
 	fetcher paper.Fetcher
+	repo    paper.Repository
 	log     shared.Logger
 	query   paper.Query
 }
 
-// NewArxivUseCase returns a paper.UseCase for the arXiv source. The fetcher,
-// logger, and query are all provided by the bootstrap layer; the use case
-// holds an immutable copy of the query for deterministic per-call behavior.
-func NewArxivUseCase(fetcher paper.Fetcher, log shared.Logger, query paper.Query) paper.UseCase {
-	return &arxivUseCase{fetcher: fetcher, log: log, query: query}
+// NewArxivUseCase returns an OutcomeFetcher for the arxiv source. Fetcher,
+// repository, logger, and query are all provided by the bootstrap layer.
+func NewArxivUseCase(fetcher paper.Fetcher, repo paper.Repository, log shared.Logger, query paper.Query) OutcomeFetcher {
+	return &arxivUseCase{fetcher: fetcher, repo: repo, log: log, query: query}
 }
 
-// Fetch delegates to the configured paper.Fetcher exactly once. On success it
-// logs the outcome and returns the entries. On any error it logs the failure
-// category (resolved via the sentinel identity of err) and relays the error
-// verbatim, so higher layers can map sentinels to HTTP status codes.
-func (u *arxivUseCase) Fetch(ctx context.Context) ([]paper.Entry, error) {
+// FetchWithOutcomes fetches once, then persists each returned entry in order,
+// pairing each with its is_new outcome. Order is preserved exactly as produced
+// by the fetcher (R5.7). On any save failure the loop aborts and returns
+// (nil, saveErr) — no partial slice is leaked to the caller (R5.5).
+func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, error) {
 	entries, err := u.fetcher.Fetch(ctx, u.query)
 	if err != nil {
 		u.log.WarnContext(ctx, "paper.fetch.failed",
@@ -41,11 +59,35 @@ func (u *arxivUseCase) Fetch(ctx context.Context) ([]paper.Entry, error) {
 			"err", err)
 		return nil, err
 	}
+
+	outcomes := make([]FetchedEntry, 0, len(entries))
+	newCount, skippedCount := 0, 0
+	for _, e := range entries {
+		isNew, saveErr := u.repo.Save(ctx, e)
+		if saveErr != nil {
+			// Repository already typed this as paper.ErrCatalogueUnavailable;
+			// relay verbatim so the HTTP layer maps it to its sentinel status.
+			u.log.ErrorContext(ctx, "paper.fetch.persist_failed",
+				"source", "arxiv",
+				"source_id", e.SourceID,
+				"err", saveErr)
+			return nil, saveErr
+		}
+		outcomes = append(outcomes, FetchedEntry{Entry: e, IsNew: isNew})
+		if isNew {
+			newCount++
+		} else {
+			skippedCount++
+		}
+	}
+
 	u.log.InfoContext(ctx, "paper.fetch.ok",
 		"source", "arxiv",
 		"count", len(entries),
+		"new", newCount,
+		"skipped", skippedCount,
 		"categories", u.query.Categories)
-	return entries, nil
+	return outcomes, nil
 }
 
 // classify returns a stable log string for the failure category, based on the

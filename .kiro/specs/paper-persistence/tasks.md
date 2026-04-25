@@ -48,7 +48,7 @@
   - _Depends: 1.1_
 
 - [ ] 5. Core — arxiv ingestion integration
-- [ ] 5.1 (P) Modify arxivUseCase to persist + surface is_new outcomes
+- [x] 5.1 (P) Modify arxivUseCase to persist + surface is_new outcomes
   - In `internal/application/arxiv/usecase.go`, add:
     - `FetchedEntry struct{ Entry paper.Entry; IsNew bool }` (arxiv-application-specific type — does NOT belong in `domain/paper`).
     - `OutcomeFetcher` interface with `FetchWithOutcomes(ctx) ([]FetchedEntry, error)`.
