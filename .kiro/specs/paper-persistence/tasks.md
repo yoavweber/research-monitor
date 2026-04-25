@@ -35,8 +35,8 @@
   - _Boundary: infrastructure/arxiv (parser)_
   - _Depends: 1.1_
 
-- [ ] 4. Core — paper HTTP query layer
-- [ ] 4.1 (P) Implement PaperController and its wire DTOs
+- [x] 4. Core — paper HTTP query layer
+- [x] 4.1 (P) Implement PaperController and its wire DTOs
   - New package `internal/http/controller/paper/` (local import alias `paperctrl` at call sites).
   - `PaperController` holds `paper.Repository` (no application-layer wrapper) and `shared.Clock` (kept for symmetry with the arxiv controller — unused today, no ceremony to remove).
   - `controller.go` exposes `Get(c *gin.Context)` (reads `:source` and `:source_id` path params, calls `repo.FindByKey`, `c.Error(err)` on failure so the existing `ErrorEnvelope` middleware renders the response, `common.Data(ToPaperResponse(entry))` on success) and `List(c *gin.Context)` (calls `repo.List`, error passthrough, `common.Data(ToPaperListResponse(entries))`).
