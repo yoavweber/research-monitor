@@ -104,7 +104,7 @@
   - _Boundary: tests/integration/setup_
   - _Depends: 2.1, 4.1, 6.1_
 
-- [ ] 8. Validation — endpoint integration tests
+- [x] 8. Validation — endpoint integration tests
 - [x] 8.1 (P) Paper endpoints end-to-end through the real repository
   - New file `tests/integration/papers_test.go` under the `integration` build tag. Uses the default (real-repo) `SetupTestEnv`.
   - Cases: 401 (missing and invalid token) on both endpoints; 404 on `GET /api/papers/arxiv/nonexistent`; list empty returns 200 with `"papers":[]` and `"count":0`; after directly calling `paper.Repository.Save` with a known entry through the harness's exposed repo, `GET /api/papers/arxiv/<source_id>` returns 200 with all 12 fields, and `GET /api/papers` returns a single-item list; saving two entries with different `SubmittedAt` values, list orders them newest-first (R3.2); saving two entries with the same `SourceID` but different `Source` values, both are visible in list and retrievable by their composite key (R1.3).
@@ -113,7 +113,7 @@
   - _Boundary: tests/integration (papers)_
   - _Depends: 7.2_
 
-- [ ] 8.2 (P) Arxiv fetch endpoint end-to-end with auto-persist + is_new + save-failure
+- [x] 8.2 (P) Arxiv fetch endpoint end-to-end with auto-persist + is_new + save-failure
   - Modify `tests/integration/arxiv_test.go`: augment the existing happy-path test to assert `is_new=true` on every returned entry on first call, `is_new=false` on an immediate second call, and `source="arxiv"` on every entry. After the first call, `GET /api/papers/arxiv/<first_source_id>` returns 200 with the stored entry (proves R5.1 persistence side effect).
   - New case: configure `TestEnvOpts.PaperRepo` with a fake whose `Save` returns `paper.ErrCatalogueUnavailable` → `GET /api/arxiv/fetch` returns HTTP 500 with the standard error envelope (R5.5). The fake records exactly one Save attempt before the short-circuit.
   - Removes any lingering "no datastore writes" assertion if one ever existed — integration coverage of this spec is the authoritative evidence that arxiv-fetcher's requirement 1.4 has been superseded (R5.6).
