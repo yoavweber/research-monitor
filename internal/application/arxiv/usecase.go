@@ -62,6 +62,9 @@ func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, e
 
 	outcomes := make([]FetchedEntry, 0, len(entries))
 	newCount, skippedCount := 0, 0
+	// Per-entry Save → one SQLite-WAL fsync per row. Batching into a single
+	// transaction (e.g. repo.SaveAll) would amortize the fsync cost across the
+	// whole batch; revisit if /api/arxiv/fetch latency starts dominating.
 	for _, e := range entries {
 		isNew, saveErr := u.repo.Save(ctx, e)
 		if saveErr != nil {
