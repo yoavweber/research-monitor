@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
@@ -19,17 +20,18 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// fakeUseCase is an inline fake for paper.UseCase. It records how many times
-// Fetch was invoked and returns the configured entries/error.
-type fakeUseCase struct {
-	returnEntries []paper.Entry
-	returnErr     error
-	invocations   int
+// fakeOutcomeFetcher is an inline fake for arxivapp.OutcomeFetcher. It records
+// invocations and returns the configured outcomes/error. Kept inline (not
+// shared) on purpose — task 7.2 introduces the shared mocks file.
+type fakeOutcomeFetcher struct {
+	returnOutcomes []arxivapp.FetchedEntry
+	returnErr      error
+	invocations    int
 }
 
-func (f *fakeUseCase) Fetch(_ context.Context) ([]paper.Entry, error) {
+func (f *fakeOutcomeFetcher) FetchWithOutcomes(_ context.Context) ([]arxivapp.FetchedEntry, error) {
 	f.invocations++
-	return f.returnEntries, f.returnErr
+	return f.returnOutcomes, f.returnErr
 }
 
 // fixedClock implements shared.Clock with a pre-set time so tests can assert
@@ -53,6 +55,7 @@ func sampleEntry() paper.Entry {
 	submitted := time.Date(2025, 10, 1, 10, 0, 0, 0, time.UTC)
 	updated := time.Date(2025, 10, 2, 11, 0, 0, 0, time.UTC)
 	return paper.Entry{
+		Source:          "arxiv",
 		SourceID:        "2404.12345",
 		Version:         "v1",
 		Title:           "A sample paper",
@@ -71,7 +74,9 @@ func TestArxivController_Success(t *testing.T) {
 	t.Parallel()
 
 	entry := sampleEntry()
-	uc := &fakeUseCase{returnEntries: []paper.Entry{entry}}
+	uc := &fakeOutcomeFetcher{
+		returnOutcomes: []arxivapp.FetchedEntry{{Entry: entry, IsNew: true}},
+	}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
 
@@ -92,7 +97,6 @@ func TestArxivController_Success(t *testing.T) {
 		t.Fatalf("body.data missing or wrong type; body=%v", body)
 	}
 
-	// count
 	gotCount, ok := data["count"].(float64)
 	if !ok || int(gotCount) != 1 {
 		t.Fatalf("data.count=%v, want 1", data["count"])
@@ -122,6 +126,9 @@ func TestArxivController_Success(t *testing.T) {
 	if !ok {
 		t.Fatalf("data.entries[0] wrong type: %T", entries[0])
 	}
+	if first["source"] != "arxiv" {
+		t.Fatalf("entries[0].source=%v, want arxiv", first["source"])
+	}
 	if first["source_id"] != "2404.12345" {
 		t.Fatalf("entries[0].source_id=%v, want 2404.12345", first["source_id"])
 	}
@@ -140,6 +147,9 @@ func TestArxivController_Success(t *testing.T) {
 	if first["abs_url"] != "http://arxiv.org/abs/2404.12345v1" {
 		t.Fatalf("entries[0].abs_url=%v", first["abs_url"])
 	}
+	if isNew, ok := first["is_new"].(bool); !ok || !isNew {
+		t.Fatalf("entries[0].is_new=%v, want true", first["is_new"])
+	}
 
 	authors, ok := first["authors"].([]any)
 	if !ok || len(authors) != 2 || authors[0] != "A. Author" || authors[1] != "B. Author" {
@@ -151,10 +161,63 @@ func TestArxivController_Success(t *testing.T) {
 	}
 }
 
+// TestArxivController_IsNewMix verifies that a mixed batch (one new, one
+// duplicate) round-trips through the wire envelope with per-entry is_new and
+// source preserved in fetcher order (R5.3, R5.7).
+func TestArxivController_IsNewMix(t *testing.T) {
+	t.Parallel()
+
+	first := sampleEntry()
+	second := sampleEntry()
+	second.SourceID = "2404.99999"
+	second.Version = "v2"
+	second.PDFURL = "http://arxiv.org/pdf/2404.99999v2"
+	second.AbsURL = "http://arxiv.org/abs/2404.99999v2"
+
+	uc := &fakeOutcomeFetcher{
+		returnOutcomes: []arxivapp.FetchedEntry{
+			{Entry: first, IsNew: true},
+			{Entry: second, IsNew: false},
+		},
+	}
+	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
+	ctrl := NewArxivController(uc, clock)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/fetch", nil)
+	w := httptest.NewRecorder()
+	newEngine(ctrl).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response body not JSON: %v; raw=%s", err, w.Body.String())
+	}
+	data := body["data"].(map[string]any)
+	entries := data["entries"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("entries length=%d, want 2", len(entries))
+	}
+
+	e0 := entries[0].(map[string]any)
+	e1 := entries[1].(map[string]any)
+	if e0["source_id"] != "2404.12345" || e0["is_new"] != true {
+		t.Fatalf("entries[0]: source_id=%v is_new=%v, want 2404.12345/true", e0["source_id"], e0["is_new"])
+	}
+	if e1["source_id"] != "2404.99999" || e1["is_new"] != false {
+		t.Fatalf("entries[1]: source_id=%v is_new=%v, want 2404.99999/false", e1["source_id"], e1["is_new"])
+	}
+	if e0["source"] != "arxiv" || e1["source"] != "arxiv" {
+		t.Fatalf("source: e0=%v e1=%v, want both arxiv", e0["source"], e1["source"])
+	}
+}
+
 func TestArxivController_Empty_Returns_NonNull_EmptyArray(t *testing.T) {
 	t.Parallel()
 
-	uc := &fakeUseCase{returnEntries: []paper.Entry{}}
+	uc := &fakeOutcomeFetcher{returnOutcomes: []arxivapp.FetchedEntry{}}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
 
@@ -220,13 +283,21 @@ func TestArxivController_Unavailable_Returns504(t *testing.T) {
 	assertSentinelEnvelope(t, paper.ErrUpstreamUnavailable, http.StatusGatewayTimeout)
 }
 
+// TestArxivController_CatalogueUnavailable_Returns500 covers the persistence
+// failure path (R5.5): the use case relays paper.ErrCatalogueUnavailable, the
+// ErrorEnvelope middleware renders it as a 500 envelope.
+func TestArxivController_CatalogueUnavailable_Returns500(t *testing.T) {
+	t.Parallel()
+	assertSentinelEnvelope(t, paper.ErrCatalogueUnavailable, http.StatusInternalServerError)
+}
+
 // assertSentinelEnvelope runs a request that the fake use case fails with the
 // provided sentinel and asserts the response envelope carries the expected
 // status and error-envelope shape.
 func assertSentinelEnvelope(t *testing.T, sentinel error, wantStatus int) {
 	t.Helper()
 
-	uc := &fakeUseCase{returnErr: sentinel}
+	uc := &fakeOutcomeFetcher{returnErr: sentinel}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
 
@@ -274,7 +345,7 @@ func assertSentinelEnvelope(t *testing.T, sentinel error, wantStatus int) {
 func TestArxivController_UseCaseInvokedOnce(t *testing.T) {
 	t.Parallel()
 
-	uc := &fakeUseCase{returnEntries: []paper.Entry{}}
+	uc := &fakeOutcomeFetcher{returnOutcomes: []arxivapp.FetchedEntry{}}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
 

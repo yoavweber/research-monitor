@@ -47,7 +47,7 @@
   - _Boundary: http/controller/paper_
   - _Depends: 1.1_
 
-- [ ] 5. Core — arxiv ingestion integration
+- [x] 5. Core — arxiv ingestion integration
 - [x] 5.1 (P) Modify arxivUseCase to persist + surface is_new outcomes
   - In `internal/application/arxiv/usecase.go`, add:
     - `FetchedEntry struct{ Entry paper.Entry; IsNew bool }` (arxiv-application-specific type — does NOT belong in `domain/paper`).
@@ -61,7 +61,7 @@
   - _Boundary: application/arxiv_
   - _Depends: 1.1_
 
-- [ ] 5.2 Modify ArxivController to consume OutcomeFetcher and expose source + is_new on the response
+- [x] 5.2 Modify ArxivController to consume OutcomeFetcher and expose source + is_new on the response
   - Update the constructor to `NewArxivController(uc arxivapp.OutcomeFetcher, clock shared.Clock) *ArxivController`; the controller calls `uc.FetchWithOutcomes(ctx)`.
   - `responses.go`: `EntryResponse` gains `Source string json:"source"` and `IsNew bool json:"is_new"`. `ToFetchResponse` now takes `[]arxivapp.FetchedEntry` (not `[]paper.Entry`) and maps each item onto both new fields plus the pre-existing ones.
   - Update `controller_test.go`: fake `arxivapp.OutcomeFetcher`. New cases: response body includes `source` and `is_new` on each entry; is_new=true and is_new=false mix round-trips through the envelope; `OutcomeFetcher` returning `paper.ErrCatalogueUnavailable` renders a 500 envelope (R5.5 path). Keep the existing happy / empty / sentinel-translation cases green.
