@@ -105,7 +105,7 @@
   - _Depends: 2.1, 4.1, 6.1_
 
 - [ ] 8. Validation — endpoint integration tests
-- [ ] 8.1 (P) Paper endpoints end-to-end through the real repository
+- [x] 8.1 (P) Paper endpoints end-to-end through the real repository
   - New file `tests/integration/papers_test.go` under the `integration` build tag. Uses the default (real-repo) `SetupTestEnv`.
   - Cases: 401 (missing and invalid token) on both endpoints; 404 on `GET /api/papers/arxiv/nonexistent`; list empty returns 200 with `"papers":[]` and `"count":0`; after directly calling `paper.Repository.Save` with a known entry through the harness's exposed repo, `GET /api/papers/arxiv/<source_id>` returns 200 with all 12 fields, and `GET /api/papers` returns a single-item list; saving two entries with different `SubmittedAt` values, list orders them newest-first (R3.2); saving two entries with the same `SourceID` but different `Source` values, both are visible in list and retrievable by their composite key (R1.3).
   - `go test -tags=integration -count=1 ./tests/integration/...` — all paper-endpoint cases pass alongside the pre-existing source and arxiv tests.
