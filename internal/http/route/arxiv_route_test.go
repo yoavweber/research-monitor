@@ -63,6 +63,10 @@ func TestArxivRouter_RegistersFetchEndpoint(t *testing.T) {
 			Fetcher: &fakePaperFetcher{entries: []paper.Entry{}},
 			Query:   paper.Query{Categories: []string{"cs.LG"}, MaxResults: 10},
 		},
+		// Empty fetch result → repo.Save is never invoked; a nil-method fake
+		// is sufficient to satisfy the new use-case dependency without making
+		// this wiring test responsible for repository behaviour.
+		Paper: PaperConfig{Repo: &fakePaperRepo{}},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/fetch", nil)

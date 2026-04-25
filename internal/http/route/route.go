@@ -16,6 +16,15 @@ type ArxivConfig struct {
 	Query   paper.Query
 }
 
+// PaperConfig is the feature-scoped sub-bundle for the source-neutral
+// /api/papers read endpoints. The persisted paper.Repository is the only
+// dependency; both the catalogue handlers and the arXiv use case share it,
+// so bootstrap constructs the repo once and Deps hands it to whichever
+// router needs it.
+type PaperConfig struct {
+	Repo paper.Repository
+}
+
 // Deps are the shared dependencies passed to every per-resource router.
 // Per-resource routers construct their own repo → usecase → controller chains from these.
 type Deps struct {
@@ -24,10 +33,12 @@ type Deps struct {
 	Logger shared.Logger
 	Clock  shared.Clock
 	Arxiv  ArxivConfig
+	Paper  PaperConfig
 }
 
 func Setup(d Deps) {
 	HealthRouter(d)
 	SourceRouter(d)
 	ArxivRouter(d)
+	PaperRouter(d)
 }

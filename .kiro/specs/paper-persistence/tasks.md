@@ -69,8 +69,8 @@
   - _Requirements: 5.2, 5.3, 5.4, 5.7_
   - _Depends: 5.1_
 
-- [ ] 6. Integration — HTTP route layer update
-- [ ] 6.1 Extend route.Deps with PaperConfig, register PaperRouter, rewire ArxivRouter
+- [x] 6. Integration — HTTP route layer update
+- [x] 6.1 Extend route.Deps with PaperConfig, register PaperRouter, rewire ArxivRouter
   - Add `PaperConfig{ Repo paper.Repository }` and a new `Paper PaperConfig` field on `Deps` in `internal/http/route/route.go`.
   - Rewrite `ArxivRouter` so it calls `NewArxivUseCase(d.Arxiv.Fetcher, d.Paper.Repo, d.Logger, d.Arxiv.Query)` — the new `paper.Repository` dependency — and `arxivctrl.NewArxivController(uc, d.Clock)` where `uc` is the `OutcomeFetcher` returned from the use-case constructor.
   - New `paper_route.go` with `PaperRouter(d Deps)` that locally constructs `paperctrl.NewPaperController(d.Paper.Repo, d.Clock)` and registers `GET /papers` → `ctrl.List`, `GET /papers/:source/:source_id` → `ctrl.Get` under `d.Group.Group("/papers")`.
