@@ -11,6 +11,11 @@ tasks:
     cmds:
       - go build -o bin/api ./cmd/api
 
+  seed:
+    desc: Seed initial source records (idempotent)
+    cmds:
+      - go run ./cmd/seed
+
   test:
     desc: Run unit tests
     cmds:
