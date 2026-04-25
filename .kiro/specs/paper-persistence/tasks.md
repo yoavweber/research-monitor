@@ -25,8 +25,8 @@
   - _Boundary: infrastructure/persistence/paper_
   - _Depends: 1.1_
 
-- [ ] 3. Core — arxiv source stamping
-- [ ] 3.1 (P) Stamp Source="arxiv" in the arxiv parser
+- [x] 3. Core — arxiv source stamping
+- [x] 3.1 (P) Stamp Source="arxiv" in the arxiv parser
   - Add an exported constant `SourceArxiv = "arxiv"` in a new file `internal/infrastructure/arxiv/source.go` (package-local; the parser and any future arxiv-side code reference it).
   - Modify `parseFeed` so every constructed `paper.Entry` has `Source = SourceArxiv`. No other change to parser behaviour.
   - Update `parser_test.go` happy-path fixture assertions to additionally check `entries[0].Source == "arxiv"` and `entries[1].Source == "arxiv"`. Empty and error-entry fixtures are unchanged.

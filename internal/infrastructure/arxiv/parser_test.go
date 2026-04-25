@@ -25,6 +25,9 @@ func TestParseFeed_Happy(t *testing.T) {
 	}
 
 	e0 := entries[0]
+	if e0.Source != "arxiv" {
+		t.Errorf("entry 0 Source = %q, want %q", e0.Source, "arxiv")
+	}
 	if e0.SourceID != "2404.12345" {
 		t.Errorf("entry 0 SourceID = %q, want %q", e0.SourceID, "2404.12345")
 	}
@@ -60,6 +63,9 @@ func TestParseFeed_Happy(t *testing.T) {
 	}
 
 	e1 := entries[1]
+	if e1.Source != "arxiv" {
+		t.Errorf("entry 1 Source = %q, want %q", e1.Source, "arxiv")
+	}
 	if e1.SourceID != "2403.09876" {
 		t.Errorf("entry 1 SourceID = %q, want %q", e1.SourceID, "2403.09876")
 	}

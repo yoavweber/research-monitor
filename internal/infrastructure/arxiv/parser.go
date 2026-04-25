@@ -64,6 +64,7 @@ func parseFeed(body []byte) ([]paper.Entry, error) {
 		}
 
 		entries = append(entries, paper.Entry{
+			Source:          SourceArxiv,
 			SourceID:        sourceID,
 			Version:         version,
 			Title:           feedutil.NormalizeSpace(xe.Title),
