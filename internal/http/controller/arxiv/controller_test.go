@@ -21,18 +21,18 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// fakeOutcomeFetcher is an inline fake for arxivapp.OutcomeFetcher. It records
-// invocations and returns the configured outcomes/error. Kept inline (not
+// fakeUseCase is an inline fake for arxivapp.UseCase. It records
+// invocations and returns the configured results/error. Kept inline (not
 // shared) on purpose — task 7.2 introduces the shared mocks file.
-type fakeOutcomeFetcher struct {
-	returnOutcomes []arxivapp.FetchedEntry
-	returnErr      error
-	invocations    int
+type fakeUseCase struct {
+	returnResults []arxivapp.Result
+	returnErr     error
+	invocations   int
 }
 
-func (f *fakeOutcomeFetcher) FetchWithOutcomes(_ context.Context) ([]arxivapp.FetchedEntry, error) {
+func (f *fakeUseCase) Fetch(_ context.Context) ([]arxivapp.Result, error) {
 	f.invocations++
-	return f.returnOutcomes, f.returnErr
+	return f.returnResults, f.returnErr
 }
 
 // fixedClock implements shared.Clock with a pre-set time so tests can assert
@@ -75,8 +75,8 @@ func TestArxivController_Success(t *testing.T) {
 	t.Parallel()
 
 	entry := sampleEntry()
-	uc := &fakeOutcomeFetcher{
-		returnOutcomes: []arxivapp.FetchedEntry{{Entry: entry, IsNew: true}},
+	uc := &fakeUseCase{
+		returnResults: []arxivapp.Result{{Entry: entry, IsNew: true}},
 	}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
@@ -175,8 +175,8 @@ func TestArxivController_IsNewMix(t *testing.T) {
 	second.PDFURL = "http://arxiv.org/pdf/2404.99999v2"
 	second.AbsURL = "http://arxiv.org/abs/2404.99999v2"
 
-	uc := &fakeOutcomeFetcher{
-		returnOutcomes: []arxivapp.FetchedEntry{
+	uc := &fakeUseCase{
+		returnResults: []arxivapp.Result{
 			{Entry: first, IsNew: true},
 			{Entry: second, IsNew: false},
 		},
@@ -218,7 +218,7 @@ func TestArxivController_IsNewMix(t *testing.T) {
 func TestArxivController_Empty_Returns_NonNull_EmptyArray(t *testing.T) {
 	t.Parallel()
 
-	uc := &fakeOutcomeFetcher{returnOutcomes: []arxivapp.FetchedEntry{}}
+	uc := &fakeUseCase{returnResults: []arxivapp.Result{}}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
 
@@ -283,7 +283,7 @@ func TestArxivController_CatalogueUnavailable_Returns500(t *testing.T) {
 func assertSentinelEnvelope(t *testing.T, sentinel error, wantStatus int) {
 	t.Helper()
 
-	uc := &fakeOutcomeFetcher{returnErr: sentinel}
+	uc := &fakeUseCase{returnErr: sentinel}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
 
@@ -331,7 +331,7 @@ func assertSentinelEnvelope(t *testing.T, sentinel error, wantStatus int) {
 func TestArxivController_UseCaseInvokedOnce(t *testing.T) {
 	t.Parallel()
 
-	uc := &fakeOutcomeFetcher{returnOutcomes: []arxivapp.FetchedEntry{}}
+	uc := &fakeUseCase{returnResults: []arxivapp.Result{}}
 	clock := fixedClock{now: time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)}
 	ctrl := NewArxivController(uc, clock)
 

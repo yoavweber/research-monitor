@@ -48,9 +48,10 @@ func (Paper) TableName() string { return "papers" }
 
 // FromDomain converts a domain Entry into the persistence row, allocating a
 // fresh UUID for the primary key. The slice fields (Authors, Categories) are
-// JSON-encoded because SQLite cannot store arrays natively; failure here is
-// returned to the caller because it indicates a programmer error in the
-// domain value (e.g., a non-encodable string), not a storage condition.
+// JSON-encoded because SQLite cannot store arrays natively. The error returns
+// from json.Marshal are unreachable for the current ([]string) field types but
+// are kept so the function can absorb future field additions without changing
+// its signature.
 func FromDomain(e *domain.Entry) (Paper, error) {
 	authors, err := json.Marshal(e.Authors)
 	if err != nil {

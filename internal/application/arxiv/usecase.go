@@ -1,6 +1,6 @@
 // Package arxiv implements the arxiv-side fetch+persist orchestrator. It is a
 // pure orchestrator: it invokes a paper.Fetcher, persists each returned entry
-// through paper.Repository, and surfaces per-entry is_new outcomes to its
+// through paper.Repository, and surfaces per-entry is_new results to its
 // caller. It never inspects HTTP status codes, bytes, XML, URLs, or
 // transport-level errors; paper.* sentinels are relayed verbatim.
 package arxiv
@@ -13,21 +13,22 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
-// FetchedEntry pairs a fetched domain Entry with the save-side outcome the
-// HTTP layer needs to annotate in its response. This type is arxiv-application-
-// specific by design — it does not belong in the source-neutral paper domain,
-// because is_new is a per-fetch persistence artefact, not a property of the
-// paper itself.
-type FetchedEntry struct {
+// Result pairs a fetched domain Entry with the per-entry persist outcome the
+// HTTP layer surfaces in its response. IsNew is true when Save inserted a new
+// row and false when Save short-circuited on a (Source, SourceID) collision.
+//
+// Lives in this package (not domain/paper) because IsNew is a per-fetch
+// persistence artefact, not a property of the paper itself.
+type Result struct {
 	Entry paper.Entry
 	IsNew bool
 }
 
-// OutcomeFetcher is the narrow interface the arxiv HTTP controller depends on.
-// arxivUseCase implements it. Defined here (not in domain/paper) so the type
-// stays adjacent to its sole implementation and its sole consumer category.
-type OutcomeFetcher interface {
-	FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, error)
+// UseCase is the arxiv application port. The HTTP controller depends on this
+// narrow interface; arxivUseCase is its sole implementation. Defined here
+// because Result is application-specific and does not belong in domain/paper.
+type UseCase interface {
+	Fetch(ctx context.Context) ([]Result, error)
 }
 
 // arxivUseCase orchestrates the arxiv fetch + per-entry persist sequence. It
@@ -40,17 +41,17 @@ type arxivUseCase struct {
 	query   paper.Query
 }
 
-// NewArxivUseCase returns an OutcomeFetcher for the arxiv source. Fetcher,
-// repository, logger, and query are all provided by the bootstrap layer.
-func NewArxivUseCase(fetcher paper.Fetcher, repo paper.Repository, log shared.Logger, query paper.Query) OutcomeFetcher {
+// NewArxivUseCase returns the arxiv UseCase. Fetcher, repository, logger, and
+// query are all provided by the bootstrap layer.
+func NewArxivUseCase(fetcher paper.Fetcher, repo paper.Repository, log shared.Logger, query paper.Query) UseCase {
 	return &arxivUseCase{fetcher: fetcher, repo: repo, log: log, query: query}
 }
 
-// FetchWithOutcomes fetches once, then persists each returned entry in order,
-// pairing each with its is_new outcome. Order is preserved exactly as produced
-// by the fetcher (R5.7). On any save failure the loop aborts and returns
+// Fetch fetches once, then persists each returned entry in order, pairing
+// each with its is_new result. Order is preserved exactly as produced by the
+// fetcher (R5.7). On any save failure the loop aborts and returns
 // (nil, saveErr) — no partial slice is leaked to the caller (R5.5).
-func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, error) {
+func (u *arxivUseCase) Fetch(ctx context.Context) ([]Result, error) {
 	entries, err := u.fetcher.Fetch(ctx, u.query)
 	if err != nil {
 		u.log.WarnContext(ctx, "paper.fetch.failed",
@@ -60,7 +61,7 @@ func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, e
 		return nil, err
 	}
 
-	outcomes := make([]FetchedEntry, 0, len(entries))
+	results := make([]Result, 0, len(entries))
 	newCount, skippedCount := 0, 0
 	// Per-entry Save → one SQLite-WAL fsync per row. Batching into a single
 	// transaction (e.g. repo.SaveAll) would amortize the fsync cost across the
@@ -76,7 +77,7 @@ func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, e
 				"err", saveErr)
 			return nil, saveErr
 		}
-		outcomes = append(outcomes, FetchedEntry{Entry: e, IsNew: isNew})
+		results = append(results, Result{Entry: e, IsNew: isNew})
 		if isNew {
 			newCount++
 		} else {
@@ -90,7 +91,7 @@ func (u *arxivUseCase) FetchWithOutcomes(ctx context.Context) ([]FetchedEntry, e
 		"new", newCount,
 		"skipped", skippedCount,
 		"categories", u.query.Categories)
-	return outcomes, nil
+	return results, nil
 }
 
 // classify returns a stable log string for the failure category, based on the

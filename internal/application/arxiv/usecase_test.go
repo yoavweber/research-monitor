@@ -10,9 +10,22 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
-// fakePaperFetcher is an inline fake implementing paper.Fetcher. It records
-// the Query it receives and the number of Fetch invocations, and returns the
-// canned entries/error configured by the test.
+// --- Test doubles ----------------------------------------------------------
+//
+// We use hand-rolled fakes (not a real persistence.Repository against an
+// in-memory SQLite) for two reasons:
+//
+//   1. Layering: application-level tests must depend only on domain ports.
+//      Importing infrastructure/persistence here would invert the dependency
+//      rule (see CLAUDE.md → "Dependency rule (inward only)").
+//   2. Failure injection: the orchestrator's job is to relay paper.* sentinels
+//      verbatim and abort the loop on the first save failure. Driving a real
+//      DB into ErrCatalogueUnavailable mid-loop is awkward and slow; a fake
+//      lets each row return an exact, deterministic outcome.
+//
+// The persistence layer has its own dedicated tests against a real SQLite
+// instance (internal/infrastructure/persistence/paper).
+
 type fakePaperFetcher struct {
 	capturedQuery paper.Query
 	invocations   int
@@ -26,16 +39,12 @@ func (f *fakePaperFetcher) Fetch(_ context.Context, q paper.Query) ([]paper.Entr
 	return f.returnEntries, f.returnErr
 }
 
-// saveResult is a single canned outcome the fakeRepo will return on the
-// matching Save invocation.
+// saveResult is the canned outcome fakeRepo will return on a single Save call.
 type saveResult struct {
 	isNew bool
 	err   error
 }
 
-// fakeRepo is an inline fake satisfying paper.Repository for the persist path.
-// FindByKey and List are unused by arxivUseCase and are not exercised here;
-// they panic to surface accidental coupling.
 type fakeRepo struct {
 	results     []saveResult // consumed in order, one per Save call
 	savedKeys   []string     // SourceID of each saved entry, in call order
@@ -47,7 +56,7 @@ func (r *fakeRepo) Save(_ context.Context, e paper.Entry) (bool, error) {
 	r.invocations++
 	r.savedKeys = append(r.savedKeys, e.SourceID)
 	if idx >= len(r.results) {
-		// Default to "new insert" so tests that don't care about per-call
+		// Default to "new insert" so cases that don't care about per-call
 		// outcomes can leave results empty.
 		return true, nil
 	}
@@ -55,6 +64,7 @@ func (r *fakeRepo) Save(_ context.Context, e paper.Entry) (bool, error) {
 	return res.isNew, res.err
 }
 
+// FindByKey/List are unused by arxivUseCase; panic to surface accidental coupling.
 func (r *fakeRepo) FindByKey(_ context.Context, _, _ string) (*paper.Entry, error) {
 	panic("FindByKey not used by arxivUseCase")
 }
@@ -63,14 +73,12 @@ func (r *fakeRepo) List(_ context.Context) ([]paper.Entry, error) {
 	panic("List not used by arxivUseCase")
 }
 
-// logRecord captures a single structured log call for assertions.
 type logRecord struct {
 	level string
 	msg   string
 	args  map[string]any
 }
 
-// recordingLogger is an inline fake implementing shared.Logger.
 type recordingLogger struct {
 	records []logRecord
 }
@@ -101,7 +109,7 @@ func (l *recordingLogger) DebugContext(_ context.Context, msg string, args ...an
 }
 func (l *recordingLogger) With(_ ...any) shared.Logger { return l }
 
-func (l *recordingLogger) filterLevel(level string) []logRecord {
+func (l *recordingLogger) recordsAt(level string) []logRecord {
 	var out []logRecord
 	for _, r := range l.records {
 		if r.level == level {
@@ -111,179 +119,196 @@ func (l *recordingLogger) filterLevel(level string) []logRecord {
 	return out
 }
 
+// --- Assertion helpers -----------------------------------------------------
+
+// expectedLog describes a single structured-log record we expect to see.
+// argSubset is checked as a subset of the recorded args (so callers don't need
+// to enumerate every key).
+type expectedLog struct {
+	level     string
+	msg       string
+	argSubset map[string]any
+}
+
+func assertSingleLog(t *testing.T, logs []logRecord, want expectedLog) {
+	t.Helper()
+	if len(logs) != 1 {
+		t.Fatalf("%s log count=%d, want 1; records=%v", want.level, len(logs), logs)
+	}
+	got := logs[0]
+	if got.msg != want.msg {
+		t.Fatalf("%s msg=%q, want %q", want.level, got.msg, want.msg)
+	}
+	for k, v := range want.argSubset {
+		if !reflect.DeepEqual(got.args[k], v) {
+			t.Fatalf("%s arg %q=%v, want %v", want.level, k, got.args[k], v)
+		}
+	}
+}
+
+func assertNoLogAt(t *testing.T, logs []logRecord, level string) {
+	t.Helper()
+	if len(logs) != 0 {
+		t.Fatalf("expected zero %s logs, got %d: %v", level, len(logs), logs)
+	}
+}
+
+// --- The table -------------------------------------------------------------
+
+func TestArxivUseCase_Fetch(t *testing.T) {
+	t.Parallel()
+
+	entriesABC := []paper.Entry{
+		{SourceID: "a"},
+		{SourceID: "b"},
+		{SourceID: "c"},
+	}
+
+	cases := []struct {
+		name string
+
+		// arrange
+		fetchEntries []paper.Entry
+		fetchErr     error
+		saveResults  []saveResult
+
+		// expectations
+		wantErrSentinel error // nil → no error expected
+		wantResults     []Result
+		wantSaveCount   int
+		wantSavedKeys   []string
+		wantInfo        *expectedLog
+		wantWarn        *expectedLog
+	}{
+		{
+			name:         "happy_all_new",
+			fetchEntries: entriesABC,
+			// saveResults empty → fakeRepo defaults isNew=true,err=nil for every call
+			wantResults: []Result{
+				{Entry: entriesABC[0], IsNew: true},
+				{Entry: entriesABC[1], IsNew: true},
+				{Entry: entriesABC[2], IsNew: true},
+			},
+			wantSaveCount: 3,
+			wantSavedKeys: []string{"a", "b", "c"},
+			wantInfo: &expectedLog{
+				level: "Info",
+				msg:   "paper.fetch.ok",
+				argSubset: map[string]any{
+					"source":  "arxiv",
+					"new":     3,
+					"skipped": 0,
+				},
+			},
+		},
+		{
+			name:         "mixed_new_and_skipped_preserves_order",
+			fetchEntries: entriesABC,
+			// new + skipped + new — skip in the middle to verify per-call mapping
+			saveResults: []saveResult{
+				{isNew: true},
+				{isNew: false},
+				{isNew: true},
+			},
+			wantResults: []Result{
+				{Entry: entriesABC[0], IsNew: true},
+				{Entry: entriesABC[1], IsNew: false},
+				{Entry: entriesABC[2], IsNew: true},
+			},
+			wantSaveCount: 3,
+			wantSavedKeys: []string{"a", "b", "c"},
+			wantInfo: &expectedLog{
+				level: "Info",
+				msg:   "paper.fetch.ok",
+				argSubset: map[string]any{
+					"new":     2,
+					"skipped": 1,
+				},
+			},
+		},
+		{
+			name:            "fetcher_error_skips_repo_and_warns",
+			fetchErr:        paper.ErrUpstreamBadStatus,
+			wantErrSentinel: paper.ErrUpstreamBadStatus,
+			wantSaveCount:   0,
+			wantWarn: &expectedLog{
+				level: "Warn",
+				msg:   "paper.fetch.failed",
+				argSubset: map[string]any{
+					"category": "bad_status",
+				},
+			},
+		},
+		{
+			name:         "save_failure_aborts_loop_no_partial_slice",
+			fetchEntries: entriesABC,
+			saveResults: []saveResult{
+				{isNew: true},
+				{isNew: false, err: paper.ErrCatalogueUnavailable},
+				{isNew: true}, // unreachable
+			},
+			wantErrSentinel: paper.ErrCatalogueUnavailable,
+			wantSaveCount:   2,
+			wantSavedKeys:   []string{"a", "b"},
+			// no Info on the failure path (R5.5)
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// arrange
+			fetcher := &fakePaperFetcher{returnEntries: tc.fetchEntries, returnErr: tc.fetchErr}
+			repo := &fakeRepo{results: tc.saveResults}
+			log := &recordingLogger{}
+			uc := NewArxivUseCase(fetcher, repo, log, newQuery())
+
+			// act
+			got, err := uc.Fetch(context.Background())
+
+			// assert: error
+			if tc.wantErrSentinel != nil {
+				if !errors.Is(err, tc.wantErrSentinel) {
+					t.Fatalf("err=%v, want errors.Is(%v)", err, tc.wantErrSentinel)
+				}
+				if got != nil {
+					t.Fatalf("results=%v on error path, want nil (R5.5)", got)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Fetch returned unexpected error: %v", err)
+				}
+				if !reflect.DeepEqual(got, tc.wantResults) {
+					t.Fatalf("results=%v, want %v", got, tc.wantResults)
+				}
+			}
+
+			// assert: repo invocations + saved keys
+			if repo.invocations != tc.wantSaveCount {
+				t.Fatalf("repo.Save invocations=%d, want %d", repo.invocations, tc.wantSaveCount)
+			}
+			if tc.wantSavedKeys != nil && !reflect.DeepEqual(repo.savedKeys, tc.wantSavedKeys) {
+				t.Fatalf("repo.savedKeys=%v, want %v", repo.savedKeys, tc.wantSavedKeys)
+			}
+
+			// assert: log records
+			if tc.wantInfo != nil {
+				assertSingleLog(t, log.recordsAt("Info"), *tc.wantInfo)
+			} else {
+				assertNoLogAt(t, log.recordsAt("Info"), "Info")
+			}
+			if tc.wantWarn != nil {
+				assertSingleLog(t, log.recordsAt("Warn"), *tc.wantWarn)
+			}
+		})
+	}
+}
+
 // newQuery is the standard query used across tests unless overridden.
 func newQuery() paper.Query {
 	return paper.Query{
 		Categories: []string{"cs.LG", "q-fin.ST"},
 		MaxResults: 100,
-	}
-}
-
-func TestArxivUseCase_Happy_AllNew(t *testing.T) {
-	t.Parallel()
-
-	entries := []paper.Entry{
-		{SourceID: "a"},
-		{SourceID: "b"},
-		{SourceID: "c"},
-	}
-	fetcher := &fakePaperFetcher{returnEntries: entries}
-	repo := &fakeRepo{} // default isNew=true,err=nil for every call
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fetcher, repo, log, newQuery())
-
-	got, err := uc.FetchWithOutcomes(context.Background())
-	if err != nil {
-		t.Fatalf("FetchWithOutcomes returned unexpected error: %v", err)
-	}
-	if len(got) != len(entries) {
-		t.Fatalf("outcomes len=%d, want %d", len(got), len(entries))
-	}
-	for i, fe := range got {
-		if !reflect.DeepEqual(fe.Entry, entries[i]) {
-			t.Fatalf("outcomes[%d].Entry=%v, want %v (order must match fetcher)", i, fe.Entry, entries[i])
-		}
-		if !fe.IsNew {
-			t.Fatalf("outcomes[%d].IsNew=false, want true", i)
-		}
-	}
-	if repo.invocations != 3 {
-		t.Fatalf("repo.Save invocations=%d, want 3", repo.invocations)
-	}
-
-	infos := log.filterLevel("Info")
-	if len(infos) != 1 {
-		t.Fatalf("Info log count=%d, want 1; records=%v", len(infos), log.records)
-	}
-	rec := infos[0]
-	if rec.msg != "paper.fetch.ok" {
-		t.Fatalf("Info msg=%q, want paper.fetch.ok", rec.msg)
-	}
-	if rec.args["new"] != 3 {
-		t.Fatalf("Info new=%v, want 3", rec.args["new"])
-	}
-	if rec.args["skipped"] != 0 {
-		t.Fatalf("Info skipped=%v, want 0", rec.args["skipped"])
-	}
-	if rec.args["source"] != "arxiv" {
-		t.Fatalf("Info source=%v, want arxiv", rec.args["source"])
-	}
-}
-
-func TestArxivUseCase_MixedOutcomes_CountsMatch(t *testing.T) {
-	t.Parallel()
-
-	entries := []paper.Entry{
-		{SourceID: "a"},
-		{SourceID: "b"},
-		{SourceID: "c"},
-	}
-	fetcher := &fakePaperFetcher{returnEntries: entries}
-	// 2 new + 1 skipped, with the skip in the middle to verify per-call mapping.
-	repo := &fakeRepo{results: []saveResult{
-		{isNew: true},
-		{isNew: false},
-		{isNew: true},
-	}}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fetcher, repo, log, newQuery())
-
-	got, err := uc.FetchWithOutcomes(context.Background())
-	if err != nil {
-		t.Fatalf("FetchWithOutcomes returned unexpected error: %v", err)
-	}
-	wantFlags := []bool{true, false, true}
-	if len(got) != len(wantFlags) {
-		t.Fatalf("outcomes len=%d, want %d", len(got), len(wantFlags))
-	}
-	for i, fe := range got {
-		if fe.Entry.SourceID != entries[i].SourceID {
-			t.Fatalf("outcomes[%d].Entry.SourceID=%q, want %q", i, fe.Entry.SourceID, entries[i].SourceID)
-		}
-		if fe.IsNew != wantFlags[i] {
-			t.Fatalf("outcomes[%d].IsNew=%v, want %v", i, fe.IsNew, wantFlags[i])
-		}
-	}
-
-	infos := log.filterLevel("Info")
-	if len(infos) != 1 {
-		t.Fatalf("Info log count=%d, want 1", len(infos))
-	}
-	if infos[0].args["new"] != 2 {
-		t.Fatalf("Info new=%v, want 2", infos[0].args["new"])
-	}
-	if infos[0].args["skipped"] != 1 {
-		t.Fatalf("Info skipped=%v, want 1", infos[0].args["skipped"])
-	}
-}
-
-func TestArxivUseCase_FetcherError_RepoNeverCalled(t *testing.T) {
-	t.Parallel()
-
-	fetcher := &fakePaperFetcher{returnErr: paper.ErrUpstreamBadStatus}
-	repo := &fakeRepo{}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fetcher, repo, log, newQuery())
-
-	got, err := uc.FetchWithOutcomes(context.Background())
-	if got != nil {
-		t.Fatalf("outcomes=%v on fetcher error, want nil", got)
-	}
-	if !errors.Is(err, paper.ErrUpstreamBadStatus) {
-		t.Fatalf("err=%v, want Is(ErrUpstreamBadStatus)", err)
-	}
-	if repo.invocations != 0 {
-		t.Fatalf("repo.Save invocations=%d on fetcher error, want 0", repo.invocations)
-	}
-	if len(log.filterLevel("Info")) != 0 {
-		t.Fatalf("unexpected Info log on fetcher-error path")
-	}
-	warns := log.filterLevel("Warn")
-	if len(warns) != 1 || warns[0].msg != "paper.fetch.failed" {
-		t.Fatalf("Warn log records=%v, want exactly one paper.fetch.failed", warns)
-	}
-	if warns[0].args["category"] != "bad_status" {
-		t.Fatalf("Warn category=%v, want bad_status", warns[0].args["category"])
-	}
-}
-
-func TestArxivUseCase_SaveFailureMidLoop_NoPartialOutcomes(t *testing.T) {
-	t.Parallel()
-
-	entries := []paper.Entry{
-		{SourceID: "a"},
-		{SourceID: "b"},
-		{SourceID: "c"},
-	}
-	fetcher := &fakePaperFetcher{returnEntries: entries}
-	// First save succeeds, second fails — third must never be attempted.
-	repo := &fakeRepo{results: []saveResult{
-		{isNew: true},
-		{isNew: false, err: paper.ErrCatalogueUnavailable},
-		{isNew: true}, // unreachable
-	}}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fetcher, repo, log, newQuery())
-
-	got, err := uc.FetchWithOutcomes(context.Background())
-	if got != nil {
-		t.Fatalf("outcomes=%v on save failure, want nil (no partial slice, R5.5)", got)
-	}
-	if !errors.Is(err, paper.ErrCatalogueUnavailable) {
-		t.Fatalf("err=%v, want Is(ErrCatalogueUnavailable)", err)
-	}
-	if repo.invocations != 2 {
-		t.Fatalf("repo.Save invocations=%d, want 2 (loop must abort after failure)", repo.invocations)
-	}
-	if len(repo.savedKeys) != 2 || repo.savedKeys[0] != "a" || repo.savedKeys[1] != "b" {
-		t.Fatalf("repo.savedKeys=%v, want [a b]", repo.savedKeys)
-	}
-	// No paper.fetch.ok aggregate log on the failure path.
-	if len(log.filterLevel("Info")) != 0 {
-		t.Fatalf("unexpected Info log on save-failure path")
 	}
 }

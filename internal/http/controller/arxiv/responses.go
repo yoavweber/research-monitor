@@ -1,7 +1,7 @@
 // Package arxiv hosts the HTTP handler and wire DTOs for the
 // GET /api/arxiv/fetch endpoint. The domain layer (paper) carries no response
 // shapes — this package owns the JSON contract and the mapping from
-// []arxivapp.FetchedEntry into it.
+// []arxivapp.Result into it.
 package arxiv
 
 import (
@@ -37,18 +37,18 @@ type EntryResponse struct {
 	IsNew           bool      `json:"is_new"`
 }
 
-// ToFetchResponse maps fetched outcomes into the FetchResponse wire shape.
+// ToFetchResponse maps the fetched results into the FetchResponse wire shape.
 // A nil or empty slice yields a non-nil, zero-length Entries so JSON marshals
 // to "entries":[] (not "entries":null) — required by requirement 1.5. is_new
-// is propagated from the application layer's per-entry persist outcome (R5.3).
-func ToFetchResponse(outcomes []arxivapp.FetchedEntry, fetchedAt time.Time) FetchResponse {
+// is propagated from the application layer's per-entry persist result (R5.3).
+func ToFetchResponse(results []arxivapp.Result, fetchedAt time.Time) FetchResponse {
 	resp := FetchResponse{
-		Entries:   make([]EntryResponse, 0, len(outcomes)),
-		Count:     len(outcomes),
+		Entries:   make([]EntryResponse, 0, len(results)),
+		Count:     len(results),
 		FetchedAt: fetchedAt,
 	}
-	for _, o := range outcomes {
-		e := o.Entry
+	for _, r := range results {
+		e := r.Entry
 		resp.Entries = append(resp.Entries, EntryResponse{
 			Source:          e.Source,
 			SourceID:        e.SourceID,
@@ -62,7 +62,7 @@ func ToFetchResponse(outcomes []arxivapp.FetchedEntry, fetchedAt time.Time) Fetc
 			UpdatedAt:       e.UpdatedAt,
 			PDFURL:          e.PDFURL,
 			AbsURL:          e.AbsURL,
-			IsNew:           o.IsNew,
+			IsNew:           r.IsNew,
 		})
 	}
 	return resp

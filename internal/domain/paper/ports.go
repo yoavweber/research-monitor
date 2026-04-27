@@ -25,7 +25,8 @@ type Repository interface {
 	// Save persists an entry or reports it as skipped on composite-key collision.
 	// DEDUPE: isNew=true indicates a new insert; isNew=false paired with err=nil
 	// indicates a dedupe skip (the (Source, SourceID) pair was already present).
-	// A non-nil err is always *shared.HTTPError-typed (today: paper.ErrCatalogueUnavailable).
+	// A non-nil err must be or wrap a *shared.HTTPError sentinel (today:
+	// paper.ErrCatalogueUnavailable), so shared.AsHTTPError/errors.As can detect it.
 	Save(ctx context.Context, e Entry) (isNew bool, err error)
 
 	// FindByKey returns the stored entry or paper.ErrNotFound. On any other

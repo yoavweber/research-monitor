@@ -11,18 +11,18 @@ import (
 )
 
 // ArxivController is the HTTP handler for GET /api/arxiv/fetch. It delegates
-// to arxivapp.OutcomeFetcher, never performs status-mapping on errors itself
+// to arxivapp.UseCase, never performs status-mapping on errors itself
 // (the ErrorEnvelope middleware owns that), and owns the response wire shape
 // — including the per-entry source + is_new fields surfaced from persistence.
 type ArxivController struct {
-	uc    arxivapp.OutcomeFetcher
+	uc    arxivapp.UseCase
 	clock shared.Clock
 }
 
-// NewArxivController wires the controller to its outcome-fetching use case
-// and the clock used to stamp FetchedAt on successful responses. Injecting
-// the clock keeps the response deterministic in tests.
-func NewArxivController(uc arxivapp.OutcomeFetcher, clock shared.Clock) *ArxivController {
+// NewArxivController wires the controller to its use case and the clock used
+// to stamp FetchedAt on successful responses. Injecting the clock keeps the
+// response deterministic in tests.
+func NewArxivController(uc arxivapp.UseCase, clock shared.Clock) *ArxivController {
 	return &ArxivController{uc: uc, clock: clock}
 }
 
@@ -32,10 +32,10 @@ func NewArxivController(uc arxivapp.OutcomeFetcher, clock shared.Clock) *ArxivCo
 // middleware translates *shared.HTTPError sentinels (paper.ErrUpstream*,
 // paper.ErrCatalogueUnavailable) into the final status and envelope.
 func (ctrl *ArxivController) Fetch(c *gin.Context) {
-	outcomes, err := ctrl.uc.FetchWithOutcomes(c.Request.Context())
+	results, err := ctrl.uc.Fetch(c.Request.Context())
 	if err != nil {
 		_ = c.Error(err)
 		return
 	}
-	c.JSON(http.StatusOK, common.Data(ToFetchResponse(outcomes, ctrl.clock.Now())))
+	c.JSON(http.StatusOK, common.Data(ToFetchResponse(results, ctrl.clock.Now())))
 }
