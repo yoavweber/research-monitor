@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	arxivctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/arxiv"
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
@@ -95,10 +97,10 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 
 	// Step 1 — first fetch persists both entries.
 	first := doFetch(t, env)
-	if len(first.Data.Entries) != 2 {
-		t.Fatalf("first fetch returned %d entries, want 2", len(first.Data.Entries))
+	if len(first.Entries) != 2 {
+		t.Fatalf("first fetch returned %d entries, want 2", len(first.Entries))
 	}
-	for i, e := range first.Data.Entries {
+	for i, e := range first.Entries {
 		if e.Source != paper.SourceArxiv {
 			t.Errorf("entries[%d].source = %q, want %q", i, e.Source, paper.SourceArxiv)
 		}
@@ -115,17 +117,17 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 
 	// Step 2 — list endpoint must surface both persisted papers.
 	listed := doListPapers(t, env)
-	if listed.Data.Count != 2 {
-		t.Fatalf("/api/papers count=%d, want 2", listed.Data.Count)
+	if listed.Count != 2 {
+		t.Fatalf("/api/papers count=%d, want 2", listed.Count)
 	}
-	gotIDs := []string{listed.Data.Papers[0].SourceID, listed.Data.Papers[1].SourceID}
+	gotIDs := []string{listed.Papers[0].SourceID, listed.Papers[1].SourceID}
 	wantIDs := []string{expected[0].SourceID, expected[1].SourceID}
 	slices.Sort(gotIDs)
 	slices.Sort(wantIDs)
 	if !slices.Equal(gotIDs, wantIDs) {
 		t.Errorf("/api/papers IDs = %v, want (any order) %v", gotIDs, wantIDs)
 	}
-	for _, p := range listed.Data.Papers {
+	for _, p := range listed.Papers {
 		var match bool
 		for _, exp := range expected {
 			if p.SourceID == exp.SourceID && p.Title == exp.Title {
@@ -141,21 +143,21 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 	// Step 3 — single-paper read-back returns the full record for the first
 	// pinned entry.
 	one := doGetPaper(t, env, expected[0].SourceID)
-	if one.Data.SourceID != expected[0].SourceID {
-		t.Errorf("Get source_id=%q, want %q", one.Data.SourceID, expected[0].SourceID)
+	if one.SourceID != expected[0].SourceID {
+		t.Errorf("Get source_id=%q, want %q", one.SourceID, expected[0].SourceID)
 	}
-	if one.Data.Title != expected[0].Title {
-		t.Errorf("Get title=%q, want %q", one.Data.Title, expected[0].Title)
+	if one.Title != expected[0].Title {
+		t.Errorf("Get title=%q, want %q", one.Title, expected[0].Title)
 	}
 
 	// Step 4 — second fetch hits dedupe; both entries come back with
 	// is_new=false. Proves the composite-unique-index works against real
 	// persisted rows, end-to-end.
 	second := doFetch(t, env)
-	if len(second.Data.Entries) != 2 {
-		t.Fatalf("second fetch returned %d entries, want 2", len(second.Data.Entries))
+	if len(second.Entries) != 2 {
+		t.Fatalf("second fetch returned %d entries, want 2", len(second.Entries))
 	}
-	for i, e := range second.Data.Entries {
+	for i, e := range second.Entries {
 		if e.IsNew {
 			t.Errorf("entries[%d].is_new = true on second fetch, want false (dedupe)", i)
 		}
@@ -166,57 +168,32 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 	}
 }
 
-// --- response shapes (mirror the production wire contract) ---
-
-type entryResponse struct {
-	Source   string `json:"source"`
-	SourceID string `json:"source_id"`
-	Title    string `json:"title"`
-	IsNew    bool   `json:"is_new"`
+// envelope wraps the production controller response in the common {"data": ...}
+// shell so json.Decode lands the typed payload directly. Type-parameterized so
+// the same wrapper works for every endpoint we hit.
+type envelope[T any] struct {
+	Data T `json:"data"`
 }
 
-type fetchResponse struct {
-	Data struct {
-		Entries []entryResponse `json:"entries"`
-	} `json:"data"`
-}
-
-type paperResponse struct {
-	Source   string `json:"source"`
-	SourceID string `json:"source_id"`
-	Title    string `json:"title"`
-}
-
-type listResponse struct {
-	Data struct {
-		Papers []paperResponse `json:"papers"`
-		Count  int             `json:"count"`
-	} `json:"data"`
-}
-
-type getResponse struct {
-	Data paperResponse `json:"data"`
-}
-
-func doFetch(t *testing.T, env *setup.TestEnv) fetchResponse {
+func doFetch(t *testing.T, env *setup.TestEnv) arxivctrl.FetchResponse {
 	t.Helper()
-	var out fetchResponse
+	var out envelope[arxivctrl.FetchResponse]
 	doAuthenticatedJSON(t, env, "/api/arxiv/fetch", &out)
-	return out
+	return out.Data
 }
 
-func doListPapers(t *testing.T, env *setup.TestEnv) listResponse {
+func doListPapers(t *testing.T, env *setup.TestEnv) paperctrl.PaperListResponse {
 	t.Helper()
-	var out listResponse
+	var out envelope[paperctrl.PaperListResponse]
 	doAuthenticatedJSON(t, env, "/api/papers", &out)
-	return out
+	return out.Data
 }
 
-func doGetPaper(t *testing.T, env *setup.TestEnv, sourceID string) getResponse {
+func doGetPaper(t *testing.T, env *setup.TestEnv, sourceID string) paperctrl.PaperResponse {
 	t.Helper()
-	var out getResponse
+	var out envelope[paperctrl.PaperResponse]
 	doAuthenticatedJSON(t, env, "/api/papers/"+paper.SourceArxiv+"/"+sourceID, &out)
-	return out
+	return out.Data
 }
 
 func doAuthenticatedJSON(t *testing.T, env *setup.TestEnv, path string, out any) {
