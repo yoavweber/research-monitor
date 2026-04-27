@@ -11,6 +11,8 @@ import (
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
+	"github.com/yoavweber/research-monitor/backend/tests/testdb"
 )
 
 func init() {
@@ -63,10 +65,7 @@ func TestArxivRouter_RegistersFetchEndpoint(t *testing.T) {
 			Fetcher: &fakePaperFetcher{entries: []paper.Entry{}},
 			Query:   paper.Query{Categories: []string{"cs.LG"}, MaxResults: 10},
 		},
-		// Empty fetch result → repo.Save is never invoked; a nil-method fake
-		// is sufficient to satisfy the new use-case dependency without making
-		// this wiring test responsible for repository behaviour.
-		Paper: PaperConfig{Repo: &fakePaperRepo{}},
+		Paper: PaperConfig{Repo: paperrepo.NewRepository(testdb.New(t))},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/fetch", nil)
