@@ -16,9 +16,9 @@ func TestParseFeed_Happy(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 
-	entries, err := parseFeed(body)
+	entries, err := ParseFeed(body)
 	if err != nil {
-		t.Fatalf("parseFeed returned error: %v", err)
+		t.Fatalf("ParseFeed returned error: %v", err)
 	}
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
@@ -88,12 +88,12 @@ func TestParseFeed_Empty(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 
-	entries, err := parseFeed(body)
+	entries, err := ParseFeed(body)
 	if err != nil {
-		t.Fatalf("parseFeed returned error: %v", err)
+		t.Fatalf("ParseFeed returned error: %v", err)
 	}
 	if entries == nil {
-		t.Fatalf("parseFeed returned nil slice, want non-nil empty slice")
+		t.Fatalf("ParseFeed returned nil slice, want non-nil empty slice")
 	}
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries, got %d", len(entries))
@@ -108,9 +108,9 @@ func TestParseFeed_Malformed(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 
-	entries, err := parseFeed(body)
+	entries, err := ParseFeed(body)
 	if err == nil {
-		t.Fatalf("parseFeed succeeded on malformed input, entries=%d", len(entries))
+		t.Fatalf("ParseFeed succeeded on malformed input, entries=%d", len(entries))
 	}
 	if !errors.Is(err, paper.ErrUpstreamMalformed) {
 		t.Errorf("expected err Is paper.ErrUpstreamMalformed, got %v", err)
@@ -125,9 +125,9 @@ func TestParseFeed_ErrorEntry(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 
-	entries, err := parseFeed(body)
+	entries, err := ParseFeed(body)
 	if err == nil {
-		t.Fatalf("parseFeed succeeded on error-entry feed, entries=%d", len(entries))
+		t.Fatalf("ParseFeed succeeded on error-entry feed, entries=%d", len(entries))
 	}
 	if !errors.Is(err, paper.ErrUpstreamMalformed) {
 		t.Errorf("expected err Is paper.ErrUpstreamMalformed, got %v", err)
