@@ -65,6 +65,11 @@ var expected = []struct {
 // production paper.Query shape does not express. The incoming Query is
 // ignored on purpose: this test pins the wire request, not the configured
 // query path.
+//
+// MIGRATION: when paper.Query grows Keyword and SubmittedDateRange fields,
+// delete this type and inject the production arxivFetcher with a fully-
+// specified Query — the test will then exercise the production URL builder
+// too, and the live path will have no test-only seam left.
 type liveArxivFetcher struct {
 	client shared
 }
