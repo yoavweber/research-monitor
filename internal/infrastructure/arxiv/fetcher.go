@@ -31,7 +31,7 @@ func NewArxivFetcher(baseURL string, client shared.Fetcher) paper.Fetcher {
 
 // Fetch builds an arxiv-specific query URL from the source-neutral paper.Query,
 // delegates the GET to the injected shared.Fetcher, and passes successful
-// bytes through parseFeed. All failure modes are translated to paper.*
+// bytes through ParseFeed. All failure modes are translated to paper.*
 // sentinels; a non-empty entry slice is never returned alongside a non-nil
 // error (requirement 4.4).
 func (a *arxivFetcher) Fetch(ctx context.Context, q paper.Query) ([]paper.Entry, error) {
@@ -48,7 +48,7 @@ func (a *arxivFetcher) Fetch(ctx context.Context, q paper.Query) ([]paper.Entry,
 		return nil, translateTransportError(err)
 	}
 
-	return parseFeed(body)
+	return ParseFeed(body)
 }
 
 // buildArxivURL assembles the arxiv-specific query string from a paper.Query

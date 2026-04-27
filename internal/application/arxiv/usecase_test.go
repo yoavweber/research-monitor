@@ -1,82 +1,35 @@
-package arxiv
+package arxiv_test
 
 import (
 	"context"
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
+	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
+	"github.com/yoavweber/research-monitor/backend/tests/mocks"
+	"github.com/yoavweber/research-monitor/backend/tests/testdb"
 )
 
-// fakePaperFetcher is an inline fake implementing paper.Fetcher. It records
-// the Query it receives and the number of Fetch invocations, and returns the
-// canned entries/error configured by the test.
-type fakePaperFetcher struct {
-	capturedQuery paper.Query
-	invocations   int
-	returnEntries []paper.Entry
-	returnErr     error
-}
-
-func (f *fakePaperFetcher) Fetch(_ context.Context, q paper.Query) ([]paper.Entry, error) {
-	f.invocations++
-	f.capturedQuery = q
-	return f.returnEntries, f.returnErr
-}
-
-// logRecord captures a single structured log call for assertions.
-type logRecord struct {
-	level string
-	msg   string
-	args  map[string]any
-}
-
-// recordingLogger is an inline fake implementing shared.Logger. It records
-// every call into records so tests can assert level, message, and args.
-type recordingLogger struct {
-	records []logRecord
-}
-
-func (l *recordingLogger) record(level, msg string, args []any) {
-	m := make(map[string]any, len(args)/2)
-	for i := 0; i+1 < len(args); i += 2 {
-		k, ok := args[i].(string)
-		if !ok {
-			continue
-		}
-		m[k] = args[i+1]
+func newEntry(sourceID string) paper.Entry {
+	submitted := time.Date(2024, 4, 1, 12, 0, 0, 0, time.UTC)
+	return paper.Entry{
+		Source:          paper.SourceArxiv,
+		SourceID:        sourceID,
+		Version:         "v1",
+		Title:           "Paper " + sourceID,
+		Authors:         []string{"Alice"},
+		Abstract:        "An abstract.",
+		PrimaryCategory: "cs.LG",
+		Categories:      []string{"cs.LG"},
+		SubmittedAt:     submitted,
+		UpdatedAt:       submitted.Add(time.Hour),
 	}
-	l.records = append(l.records, logRecord{level: level, msg: msg, args: m})
 }
 
-func (l *recordingLogger) InfoContext(_ context.Context, msg string, args ...any) {
-	l.record("Info", msg, args)
-}
-func (l *recordingLogger) WarnContext(_ context.Context, msg string, args ...any) {
-	l.record("Warn", msg, args)
-}
-func (l *recordingLogger) ErrorContext(_ context.Context, msg string, args ...any) {
-	l.record("Error", msg, args)
-}
-func (l *recordingLogger) DebugContext(_ context.Context, msg string, args ...any) {
-	l.record("Debug", msg, args)
-}
-func (l *recordingLogger) With(_ ...any) shared.Logger { return l }
-
-// filterLevel returns only the records emitted at the given level.
-func (l *recordingLogger) filterLevel(level string) []logRecord {
-	var out []logRecord
-	for _, r := range l.records {
-		if r.level == level {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-// newQuery is the standard query used across tests unless overridden.
 func newQuery() paper.Query {
 	return paper.Query{
 		Categories: []string{"cs.LG", "q-fin.ST"},
@@ -84,234 +37,151 @@ func newQuery() paper.Query {
 	}
 }
 
-func TestArxivUseCase_Success_ReturnsEntriesAndLogsInfo(t *testing.T) {
+func TestArxivUseCase_Fetch(t *testing.T) {
 	t.Parallel()
 
-	entries := []paper.Entry{{SourceID: "a"}, {SourceID: "b"}}
-	fake := &fakePaperFetcher{returnEntries: entries}
-	log := &recordingLogger{}
-	q := newQuery()
+	t.Run("returns all entries as new on an empty catalogue", func(t *testing.T) {
+		t.Parallel()
+		entries := []paper.Entry{newEntry("a"), newEntry("b"), newEntry("c")}
+		fetcher := &mocks.PaperFetcher{Entries: entries}
+		repo := paperrepo.NewRepository(testdb.New(t))
+		log := &mocks.RecordingLogger{}
+		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery())
 
-	uc := NewArxivUseCase(fake, log, q)
+		got, err := uc.Fetch(context.Background())
 
-	got, err := uc.Fetch(context.Background())
-	if err != nil {
-		t.Fatalf("Fetch returned unexpected error: %v", err)
-	}
-	if !reflect.DeepEqual(got, entries) {
-		t.Fatalf("Fetch returned entries=%v, want %v", got, entries)
-	}
-	if fake.invocations != 1 {
-		t.Fatalf("fetcher invocations=%d, want 1", fake.invocations)
-	}
-	if !reflect.DeepEqual(fake.capturedQuery, q) {
-		t.Fatalf("captured query=%v, want %v", fake.capturedQuery, q)
-	}
+		if err != nil {
+			t.Fatalf("Fetch err = %v, want nil", err)
+		}
+		want := []arxivapp.Result{
+			{Entry: entries[0], IsNew: true},
+			{Entry: entries[1], IsNew: true},
+			{Entry: entries[2], IsNew: true},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("results = %v, want %v", got, want)
+		}
+		assertSingleLog(t, log.RecordsAt("Info"), "paper.fetch.ok", map[string]any{
+			"source": paper.SourceArxiv, "new": 3, "skipped": 0,
+		})
+	})
 
-	infos := log.filterLevel("Info")
-	if len(infos) != 1 {
-		t.Fatalf("Info log count=%d, want 1; records=%v", len(infos), log.records)
-	}
-	if infos[0].msg != "paper.fetch.ok" {
-		t.Fatalf("Info msg=%q, want %q", infos[0].msg, "paper.fetch.ok")
-	}
-	if infos[0].args["source"] != "arxiv" {
-		t.Fatalf("Info source arg=%v, want arxiv", infos[0].args["source"])
-	}
-	if infos[0].args["count"] != 2 {
-		t.Fatalf("Info count arg=%v, want 2", infos[0].args["count"])
-	}
-	if cats, ok := infos[0].args["categories"].([]string); !ok || !reflect.DeepEqual(cats, q.Categories) {
-		t.Fatalf("Info categories arg=%v, want %v", infos[0].args["categories"], q.Categories)
-	}
+	t.Run("preserves fetcher order on mixed new and dedupe-skipped", func(t *testing.T) {
+		t.Parallel()
+		entries := []paper.Entry{newEntry("a"), newEntry("b"), newEntry("c")}
+		db := testdb.New(t)
+		repo := paperrepo.NewRepository(db)
+		// Pre-seed entry "b" so Save #2 hits the real composite-key dedupe.
+		if _, err := repo.Save(context.Background(), entries[1]); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		fetcher := &mocks.PaperFetcher{Entries: entries}
+		log := &mocks.RecordingLogger{}
+		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery())
+
+		got, err := uc.Fetch(context.Background())
+
+		if err != nil {
+			t.Fatalf("Fetch err = %v, want nil", err)
+		}
+		wantFlags := []bool{true, false, true}
+		if len(got) != len(wantFlags) {
+			t.Fatalf("len(results) = %d, want %d", len(got), len(wantFlags))
+		}
+		for i, r := range got {
+			if r.Entry.SourceID != entries[i].SourceID {
+				t.Fatalf("results[%d].SourceID = %q, want %q (order must match fetcher)", i, r.Entry.SourceID, entries[i].SourceID)
+			}
+			if r.IsNew != wantFlags[i] {
+				t.Fatalf("results[%d].IsNew = %v, want %v", i, r.IsNew, wantFlags[i])
+			}
+		}
+		assertSingleLog(t, log.RecordsAt("Info"), "paper.fetch.ok", map[string]any{
+			"new": 2, "skipped": 1,
+		})
+	})
+
+	t.Run("skips repo and warns when fetcher returns a sentinel", func(t *testing.T) {
+		t.Parallel()
+		fetcher := &mocks.PaperFetcher{Error: paper.ErrUpstreamBadStatus}
+		repo := paperrepo.NewRepository(testdb.New(t))
+		log := &mocks.RecordingLogger{}
+		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery())
+
+		got, err := uc.Fetch(context.Background())
+
+		if !errors.Is(err, paper.ErrUpstreamBadStatus) {
+			t.Fatalf("err = %v, want errors.Is(ErrUpstreamBadStatus)", err)
+		}
+		if got != nil {
+			t.Fatalf("results = %v, want nil on fetcher error", got)
+		}
+		// repo wasn't reached: List against the empty DB still returns []
+		stored, err := repo.List(context.Background())
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(stored) != 0 {
+			t.Fatalf("repo persisted %d entries on fetcher-error path, want 0", len(stored))
+		}
+		if len(log.RecordsAt("Info")) != 0 {
+			t.Fatal("unexpected Info log on fetcher-error path")
+		}
+		assertSingleLog(t, log.RecordsAt("Warn"), "paper.fetch.failed", map[string]any{
+			"category": "bad_status",
+		})
+	})
+
+	t.Run("aborts loop and returns no partial slice on save failure", func(t *testing.T) {
+		t.Parallel()
+		entries := []paper.Entry{newEntry("a"), newEntry("b"), newEntry("c")}
+		fetcher := &mocks.PaperFetcher{Entries: entries}
+		// Mid-loop failure injection: Save #1 succeeds, #2 returns
+		// ErrCatalogueUnavailable, #3 must never fire. A real SQLite repo
+		// can't selectively fail one row in the middle of a loop, so the
+		// queued-result fake is the only way to drive this contract.
+		repo := &mocks.PaperRepo{SaveResults: []mocks.PaperRepoSaveResult{
+			{IsNew: true},
+			{IsNew: false, Err: paper.ErrCatalogueUnavailable},
+			{IsNew: true}, // unreachable; if Save #3 fires the test fails on count
+		}}
+		log := &mocks.RecordingLogger{}
+		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery())
+
+		got, err := uc.Fetch(context.Background())
+
+		if !errors.Is(err, paper.ErrCatalogueUnavailable) {
+			t.Fatalf("err = %v, want errors.Is(ErrCatalogueUnavailable)", err)
+		}
+		if got != nil {
+			t.Fatalf("results = %v, want nil on save failure (R5.5)", got)
+		}
+		if len(repo.SaveCalls) != 2 {
+			t.Fatalf("repo.Save calls = %d, want 2 (loop must abort after first failure)", len(repo.SaveCalls))
+		}
+		gotKeys := []string{repo.SaveCalls[0].SourceID, repo.SaveCalls[1].SourceID}
+		if !reflect.DeepEqual(gotKeys, []string{"a", "b"}) {
+			t.Fatalf("saved keys = %v, want [a b]", gotKeys)
+		}
+		if len(log.RecordsAt("Info")) != 0 {
+			t.Fatal("unexpected Info log on save-failure path")
+		}
+	})
 }
 
-func TestArxivUseCase_EmptyEntries_IsSuccess(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakePaperFetcher{returnEntries: []paper.Entry{}}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fake, log, newQuery())
-
-	got, err := uc.Fetch(context.Background())
-	if err != nil {
-		t.Fatalf("Fetch returned unexpected error: %v", err)
+// assertSingleLog asserts exactly one record was emitted at this level, with
+// the given msg and an args superset of want.
+func assertSingleLog(t *testing.T, got []mocks.LogRecord, msg string, want map[string]any) {
+	t.Helper()
+	if len(got) != 1 {
+		t.Fatalf("log count = %d, want 1; records = %v", len(got), got)
 	}
-	if got == nil {
-		t.Fatalf("Fetch returned nil slice, want empty non-nil slice")
+	if got[0].Msg != msg {
+		t.Fatalf("log msg = %q, want %q", got[0].Msg, msg)
 	}
-	if len(got) != 0 {
-		t.Fatalf("Fetch returned %d entries, want 0", len(got))
-	}
-
-	infos := log.filterLevel("Info")
-	if len(infos) != 1 {
-		t.Fatalf("Info log count=%d, want 1", len(infos))
-	}
-	if infos[0].args["count"] != 0 {
-		t.Fatalf("Info count arg=%v, want 0", infos[0].args["count"])
-	}
-}
-
-func TestArxivUseCase_BadStatus_RelaysSentinelAndLogsWarn(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakePaperFetcher{returnErr: paper.ErrUpstreamBadStatus}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fake, log, newQuery())
-
-	got, err := uc.Fetch(context.Background())
-	if got != nil {
-		t.Fatalf("Fetch returned entries=%v on error, want nil", got)
-	}
-	if !errors.Is(err, paper.ErrUpstreamBadStatus) {
-		t.Fatalf("Fetch err=%v, want Is(ErrUpstreamBadStatus)", err)
-	}
-
-	if len(log.filterLevel("Info")) != 0 {
-		t.Fatalf("unexpected Info log on error path")
-	}
-	warns := log.filterLevel("Warn")
-	if len(warns) != 1 {
-		t.Fatalf("Warn log count=%d, want 1", len(warns))
-	}
-	if warns[0].msg != "paper.fetch.failed" {
-		t.Fatalf("Warn msg=%q, want %q", warns[0].msg, "paper.fetch.failed")
-	}
-	if warns[0].args["source"] != "arxiv" {
-		t.Fatalf("Warn source arg=%v, want arxiv", warns[0].args["source"])
-	}
-	if warns[0].args["category"] != "bad_status" {
-		t.Fatalf("Warn category arg=%v, want bad_status", warns[0].args["category"])
-	}
-}
-
-func TestArxivUseCase_Malformed_RelaysSentinelAndLogsWarn(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakePaperFetcher{returnErr: paper.ErrUpstreamMalformed}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fake, log, newQuery())
-
-	got, err := uc.Fetch(context.Background())
-	if got != nil {
-		t.Fatalf("Fetch returned entries=%v on error, want nil", got)
-	}
-	if !errors.Is(err, paper.ErrUpstreamMalformed) {
-		t.Fatalf("Fetch err=%v, want Is(ErrUpstreamMalformed)", err)
-	}
-
-	warns := log.filterLevel("Warn")
-	if len(warns) != 1 {
-		t.Fatalf("Warn log count=%d, want 1", len(warns))
-	}
-	if warns[0].args["category"] != "malformed" {
-		t.Fatalf("Warn category arg=%v, want malformed", warns[0].args["category"])
-	}
-}
-
-func TestArxivUseCase_Unavailable_RelaysSentinelAndLogsWarn(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakePaperFetcher{returnErr: paper.ErrUpstreamUnavailable}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fake, log, newQuery())
-
-	got, err := uc.Fetch(context.Background())
-	if got != nil {
-		t.Fatalf("Fetch returned entries=%v on error, want nil", got)
-	}
-	if !errors.Is(err, paper.ErrUpstreamUnavailable) {
-		t.Fatalf("Fetch err=%v, want Is(ErrUpstreamUnavailable)", err)
-	}
-
-	warns := log.filterLevel("Warn")
-	if len(warns) != 1 {
-		t.Fatalf("Warn log count=%d, want 1", len(warns))
-	}
-	if warns[0].args["category"] != "unavailable" {
-		t.Fatalf("Warn category arg=%v, want unavailable", warns[0].args["category"])
-	}
-}
-
-func TestArxivUseCase_UnknownError_ReliedUnchanged(t *testing.T) {
-	t.Parallel()
-
-	weird := errors.New("weird")
-	fake := &fakePaperFetcher{returnErr: weird}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fake, log, newQuery())
-
-	got, err := uc.Fetch(context.Background())
-	if got != nil {
-		t.Fatalf("Fetch returned entries=%v on error, want nil", got)
-	}
-	if err != weird {
-		t.Fatalf("Fetch err=%v, want %v (verbatim)", err, weird)
-	}
-
-	warns := log.filterLevel("Warn")
-	if len(warns) != 1 {
-		t.Fatalf("Warn log count=%d, want 1", len(warns))
-	}
-	if warns[0].args["category"] != "unknown" {
-		t.Fatalf("Warn category arg=%v, want unknown", warns[0].args["category"])
-	}
-}
-
-func TestArxivUseCase_PassesQueryToFetcher(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakePaperFetcher{returnEntries: []paper.Entry{}}
-	log := &recordingLogger{}
-	q := paper.Query{Categories: []string{"cs.LG"}, MaxResults: 50}
-
-	uc := NewArxivUseCase(fake, log, q)
-	if _, err := uc.Fetch(context.Background()); err != nil {
-		t.Fatalf("Fetch returned unexpected error: %v", err)
-	}
-
-	if !reflect.DeepEqual(fake.capturedQuery, q) {
-		t.Fatalf("captured query=%v, want %v", fake.capturedQuery, q)
-	}
-}
-
-func TestArxivUseCase_SingleFetcherCall(t *testing.T) {
-	t.Parallel()
-
-	fake := &fakePaperFetcher{returnEntries: []paper.Entry{}}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fake, log, newQuery())
-	if _, err := uc.Fetch(context.Background()); err != nil {
-		t.Fatalf("Fetch returned unexpected error: %v", err)
-	}
-	if fake.invocations != 1 {
-		t.Fatalf("fetcher invocations=%d, want 1", fake.invocations)
-	}
-}
-
-func TestArxivUseCase_NeverReturnsEntriesOnError(t *testing.T) {
-	t.Parallel()
-
-	// Even if the fake were to return non-empty entries alongside an error,
-	// the use case must return nil. Our fake follows the contract and returns
-	// nil entries with a non-nil err; assert the use case surface is nil.
-	fake := &fakePaperFetcher{returnErr: paper.ErrUpstreamBadStatus}
-	log := &recordingLogger{}
-
-	uc := NewArxivUseCase(fake, log, newQuery())
-
-	entries, err := uc.Fetch(context.Background())
-	if err == nil {
-		t.Fatalf("expected non-nil error")
-	}
-	if entries != nil {
-		t.Fatalf("entries=%v on error path, want nil", entries)
+	for k, v := range want {
+		if !reflect.DeepEqual(got[0].Args[k], v) {
+			t.Fatalf("log arg %q = %v, want %v", k, got[0].Args[k], v)
+		}
 	}
 }

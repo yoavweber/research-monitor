@@ -1,13 +1,13 @@
 // Package arxiv hosts the HTTP handler and wire DTOs for the
 // GET /api/arxiv/fetch endpoint. The domain layer (paper) carries no response
 // shapes — this package owns the JSON contract and the mapping from
-// []paper.Entry into it.
+// []arxivapp.Result into it.
 package arxiv
 
 import (
 	"time"
 
-	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
 )
 
 // FetchResponse is the top-level wire shape for GET /api/arxiv/fetch. It is
@@ -22,6 +22,7 @@ type FetchResponse struct {
 // snake_case contract; a future consumer (dedupe / summarisation pipeline) keys
 // off these. Keep them stable.
 type EntryResponse struct {
+	Source          string    `json:"source"`
 	SourceID        string    `json:"source_id"`
 	Version         string    `json:"version,omitempty"`
 	Title           string    `json:"title"`
@@ -33,19 +34,23 @@ type EntryResponse struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 	PDFURL          string    `json:"pdf_url"`
 	AbsURL          string    `json:"abs_url"`
+	IsNew           bool      `json:"is_new"`
 }
 
-// ToFetchResponse maps domain Entry values into the FetchResponse wire shape.
+// ToFetchResponse maps the fetched results into the FetchResponse wire shape.
 // A nil or empty slice yields a non-nil, zero-length Entries so JSON marshals
-// to "entries":[] (not "entries":null) — required by requirement 1.5.
-func ToFetchResponse(entries []paper.Entry, fetchedAt time.Time) FetchResponse {
+// to "entries":[] (not "entries":null) — required by requirement 1.5. is_new
+// is propagated from the application layer's per-entry persist result (R5.3).
+func ToFetchResponse(results []arxivapp.Result, fetchedAt time.Time) FetchResponse {
 	resp := FetchResponse{
-		Entries:   make([]EntryResponse, 0, len(entries)),
-		Count:     len(entries),
+		Entries:   make([]EntryResponse, 0, len(results)),
+		Count:     len(results),
 		FetchedAt: fetchedAt,
 	}
-	for _, e := range entries {
+	for _, r := range results {
+		e := r.Entry
 		resp.Entries = append(resp.Entries, EntryResponse{
+			Source:          e.Source,
 			SourceID:        e.SourceID,
 			Version:         e.Version,
 			Title:           e.Title,
@@ -57,6 +62,7 @@ func ToFetchResponse(entries []paper.Entry, fetchedAt time.Time) FetchResponse {
 			UpdatedAt:       e.UpdatedAt,
 			PDFURL:          e.PDFURL,
 			AbsURL:          e.AbsURL,
+			IsNew:           r.IsNew,
 		})
 	}
 	return resp

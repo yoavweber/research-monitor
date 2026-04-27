@@ -42,7 +42,7 @@ The arxiv-fetcher feature gives the researcher a manual, on-demand way to pull t
 1. When an authenticated client issues the arXiv fetch request, the arxiv-fetcher shall return an HTTP 200 response with a JSON body containing the fetched arXiv entries.
 2. If the request omits or presents an invalid `X-API-Token`, the arxiv-fetcher shall return an HTTP 401 response and shall not contact arXiv. the solution for this should be generic for any future protected endpoint
 3. When the response is returned, the arxiv-fetcher shall include, for each entry, enough information to identify the paper: at minimum the arXiv identifier, title, authors, abstract, primary category, submission date, and a link to the PDF.
-4. The arxiv-fetcher shall not write fetched entries to any datastore as part of handling the request.
+4. ~~The arxiv-fetcher shall not write fetched entries to any datastore as part of handling the request.~~ **Superseded by `paper-persistence` spec (Requirement 5: Auto-persistence on arxiv fetch).** The fetch endpoint now persists every returned entry into the catalogue before responding and annotates each entry with `is_new`.
 5. When no entries match the configured categories, the arxiv-fetcher shall return an HTTP 200 response with an empty entry list rather than an error.
 
 ### Requirement 2: Category configuration

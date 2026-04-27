@@ -13,11 +13,14 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/feedutil"
 )
 
-// parseFeed decodes arXiv's Atom feed into source-neutral paper.Entry values.
+// ParseFeed decodes arXiv's Atom feed into source-neutral paper.Entry values.
 // It returns paper.ErrUpstreamMalformed on any decode failure or when the
 // feed contains arXiv's wrapped error entry (<id>http://arxiv.org/api/errors#...</id>).
 // A structurally valid feed with zero entries returns ([]paper.Entry{}, nil).
-func parseFeed(body []byte) ([]paper.Entry, error) {
+//
+// Exported so out-of-tree callers (e.g. the manual live test under
+// tests/manual) can reuse the canonical Atom parser without duplicating it.
+func ParseFeed(body []byte) ([]paper.Entry, error) {
 	var feed xmlFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("%w: xml decode: %v", paper.ErrUpstreamMalformed, err)
@@ -64,6 +67,7 @@ func parseFeed(body []byte) ([]paper.Entry, error) {
 		}
 
 		entries = append(entries, paper.Entry{
+			Source:          paper.SourceArxiv,
 			SourceID:        sourceID,
 			Version:         version,
 			Title:           feedutil.NormalizeSpace(xe.Title),

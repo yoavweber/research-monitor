@@ -11,6 +11,8 @@ import (
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
+	"github.com/yoavweber/research-monitor/backend/tests/testdb"
 )
 
 func init() {
@@ -63,6 +65,7 @@ func TestArxivRouter_RegistersFetchEndpoint(t *testing.T) {
 			Fetcher: &fakePaperFetcher{entries: []paper.Entry{}},
 			Query:   paper.Query{Categories: []string{"cs.LG"}, MaxResults: 10},
 		},
+		Paper: PaperConfig{Repo: paperrepo.NewRepository(testdb.New(t))},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/fetch", nil)

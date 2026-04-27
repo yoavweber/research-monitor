@@ -1,7 +1,7 @@
 # Implementation Plan
 
-- [ ] 1. Foundation — paper domain extensions
-- [ ] 1.1 Extend paper.Entry, introduce the Repository port, define sentinels, delete the speculative UseCase
+- [x] 1. Foundation — paper domain extensions
+- [x] 1.1 Extend paper.Entry, introduce the Repository port, define sentinels, delete the speculative UseCase
   - Add a `Source string` field to `paper.Entry` alongside the existing fields.
   - Delete the speculative `paper.UseCase` interface from `domain/paper/ports.go` (arxiv is its only consumer and that consumer is being migrated to an arxiv-application-local `OutcomeFetcher` in a later task).
   - Introduce `paper.Repository` with three methods — `Save(ctx, Entry) (isNew bool, err error)`, `FindByKey(ctx, source, sourceID string) (*Entry, error)`, `List(ctx) ([]Entry, error)` — with the doc-comments from design §Domain Layer, including the `DEDUPE:` marker on `Save` and the explicit note that the repository owns sentinel translation (returns `paper.ErrNotFound` on miss, `paper.ErrCatalogueUnavailable` on any other DB failure).
@@ -10,8 +10,8 @@
   - `go build ./internal/domain/paper/...` succeeds; sentinel tests pass; all downstream callers of the deleted `paper.UseCase` in the current tree surface as clean compile errors (they will be repaired by tasks 5.1, 6.1, 6.2, 7.1).
   - _Requirements: 1.3, 1.4, 1.5, 2.2, 5.4, 5.5_
 
-- [ ] 2. Core — persistence adapter
-- [ ] 2.1 (P) Implement paper.Repository on SQLite with composite-unique-index dedupe + sentinel translation
+- [x] 2. Core — persistence adapter
+- [x] 2.1 (P) Implement paper.Repository on SQLite with composite-unique-index dedupe + sentinel translation
   - New package `internal/infrastructure/persistence/paper/`. Persistence model `Paper` with every domain field mapped; `Authors` and `Categories` stored as JSON-encoded text since SQLite has no native array type; `submitted_at` indexed for the list's ORDER BY.
   - The composite uniqueness invariant is declared via GORM struct tags — `Source` and `SourceID` both carry `uniqueIndex:idx_papers_source_source_id` — so the DB creates the index during `AutoMigrate` and rejects duplicates atomically. The `// DEDUPE:` marker from design §Infrastructure Layer is preserved in the source.
   - `FromDomain` / `ToDomain` round-trip every field including the slices.
@@ -25,8 +25,8 @@
   - _Boundary: infrastructure/persistence/paper_
   - _Depends: 1.1_
 
-- [ ] 3. Core — arxiv source stamping
-- [ ] 3.1 (P) Stamp Source="arxiv" in the arxiv parser
+- [x] 3. Core — arxiv source stamping
+- [x] 3.1 (P) Stamp Source="arxiv" in the arxiv parser
   - Add an exported constant `SourceArxiv = "arxiv"` in a new file `internal/infrastructure/arxiv/source.go` (package-local; the parser and any future arxiv-side code reference it).
   - Modify `parseFeed` so every constructed `paper.Entry` has `Source = SourceArxiv`. No other change to parser behaviour.
   - Update `parser_test.go` happy-path fixture assertions to additionally check `entries[0].Source == "arxiv"` and `entries[1].Source == "arxiv"`. Empty and error-entry fixtures are unchanged.
@@ -35,8 +35,8 @@
   - _Boundary: infrastructure/arxiv (parser)_
   - _Depends: 1.1_
 
-- [ ] 4. Core — paper HTTP query layer
-- [ ] 4.1 (P) Implement PaperController and its wire DTOs
+- [x] 4. Core — paper HTTP query layer
+- [x] 4.1 (P) Implement PaperController and its wire DTOs
   - New package `internal/http/controller/paper/` (local import alias `paperctrl` at call sites).
   - `PaperController` holds `paper.Repository` (no application-layer wrapper) and `shared.Clock` (kept for symmetry with the arxiv controller — unused today, no ceremony to remove).
   - `controller.go` exposes `Get(c *gin.Context)` (reads `:source` and `:source_id` path params, calls `repo.FindByKey`, `c.Error(err)` on failure so the existing `ErrorEnvelope` middleware renders the response, `common.Data(ToPaperResponse(entry))` on success) and `List(c *gin.Context)` (calls `repo.List`, error passthrough, `common.Data(ToPaperListResponse(entries))`).
@@ -47,8 +47,8 @@
   - _Boundary: http/controller/paper_
   - _Depends: 1.1_
 
-- [ ] 5. Core — arxiv ingestion integration
-- [ ] 5.1 (P) Modify arxivUseCase to persist + surface is_new outcomes
+- [x] 5. Core — arxiv ingestion integration
+- [x] 5.1 (P) Modify arxivUseCase to persist + surface is_new outcomes
   - In `internal/application/arxiv/usecase.go`, add:
     - `FetchedEntry struct{ Entry paper.Entry; IsNew bool }` (arxiv-application-specific type — does NOT belong in `domain/paper`).
     - `OutcomeFetcher` interface with `FetchWithOutcomes(ctx) ([]FetchedEntry, error)`.
@@ -61,7 +61,7 @@
   - _Boundary: application/arxiv_
   - _Depends: 1.1_
 
-- [ ] 5.2 Modify ArxivController to consume OutcomeFetcher and expose source + is_new on the response
+- [x] 5.2 Modify ArxivController to consume OutcomeFetcher and expose source + is_new on the response
   - Update the constructor to `NewArxivController(uc arxivapp.OutcomeFetcher, clock shared.Clock) *ArxivController`; the controller calls `uc.FetchWithOutcomes(ctx)`.
   - `responses.go`: `EntryResponse` gains `Source string json:"source"` and `IsNew bool json:"is_new"`. `ToFetchResponse` now takes `[]arxivapp.FetchedEntry` (not `[]paper.Entry`) and maps each item onto both new fields plus the pre-existing ones.
   - Update `controller_test.go`: fake `arxivapp.OutcomeFetcher`. New cases: response body includes `source` and `is_new` on each entry; is_new=true and is_new=false mix round-trips through the envelope; `OutcomeFetcher` returning `paper.ErrCatalogueUnavailable` renders a 500 envelope (R5.5 path). Keep the existing happy / empty / sentinel-translation cases green.
@@ -69,8 +69,8 @@
   - _Requirements: 5.2, 5.3, 5.4, 5.7_
   - _Depends: 5.1_
 
-- [ ] 6. Integration — HTTP route layer update
-- [ ] 6.1 Extend route.Deps with PaperConfig, register PaperRouter, rewire ArxivRouter
+- [x] 6. Integration — HTTP route layer update
+- [x] 6.1 Extend route.Deps with PaperConfig, register PaperRouter, rewire ArxivRouter
   - Add `PaperConfig{ Repo paper.Repository }` and a new `Paper PaperConfig` field on `Deps` in `internal/http/route/route.go`.
   - Rewrite `ArxivRouter` so it calls `NewArxivUseCase(d.Arxiv.Fetcher, d.Paper.Repo, d.Logger, d.Arxiv.Query)` — the new `paper.Repository` dependency — and `arxivctrl.NewArxivController(uc, d.Clock)` where `uc` is the `OutcomeFetcher` returned from the use-case constructor.
   - New `paper_route.go` with `PaperRouter(d Deps)` that locally constructs `paperctrl.NewPaperController(d.Paper.Repo, d.Clock)` and registers `GET /papers` → `ctrl.List`, `GET /papers/:source/:source_id` → `ctrl.Get` under `d.Group.Group("/papers")`.
@@ -80,8 +80,8 @@
   - _Requirements: 2.1, 2.3, 3.1, 3.4, 5.2_
   - _Depends: 4.1, 5.1, 5.2_
 
-- [ ] 7. Integration — bootstrap and test harness
-- [ ] 7.1 (P) Wire the paper repository pipeline into bootstrap
+- [x] 7. Integration — bootstrap and test harness
+- [x] 7.1 (P) Wire the paper repository pipeline into bootstrap
   - In `internal/bootstrap/app.go`, after `persistence.AutoMigrate(db)` (which now includes the `papers` table):
     - Construct `paperRepo := paperpersist.NewRepository(db)`.
     - Thread `paperRepo` into `route.Deps` as `Paper: route.PaperConfig{Repo: paperRepo}`.
@@ -93,7 +93,7 @@
   - _Boundary: bootstrap_
   - _Depends: 2.1, 3.1, 6.1_
 
-- [ ] 7.2 (P) Extend the integration test harness with a repository injection point
+- [x] 7.2 (P) Extend the integration test harness with a repository injection point
   - In `tests/integration/setup/setup.go`, extend `TestEnvOpts` with a nullable `PaperRepo paper.Repository`. When `nil`, the harness builds a real repository on top of the temp SQLite DB (same DB the harness already sets up for `source` tests). When provided, the harness uses the injected one verbatim — enables failure-injection for R5.5 integration tests.
   - The harness registers `PaperRouter(d)` on the `/api` group (same group that already mounts `ArxivRouter` and the `APIToken` middleware) and threads the repo through as `Deps.Paper.Repo`. The arxiv use case constructed inside `ArxivRouter` automatically receives the same repo via `Deps.Paper.Repo`.
   - Expose the built-or-injected repo on the returned `TestEnv` so tests can verify persisted state directly when useful.
@@ -104,8 +104,8 @@
   - _Boundary: tests/integration/setup_
   - _Depends: 2.1, 4.1, 6.1_
 
-- [ ] 8. Validation — endpoint integration tests
-- [ ] 8.1 (P) Paper endpoints end-to-end through the real repository
+- [x] 8. Validation — endpoint integration tests
+- [x] 8.1 (P) Paper endpoints end-to-end through the real repository
   - New file `tests/integration/papers_test.go` under the `integration` build tag. Uses the default (real-repo) `SetupTestEnv`.
   - Cases: 401 (missing and invalid token) on both endpoints; 404 on `GET /api/papers/arxiv/nonexistent`; list empty returns 200 with `"papers":[]` and `"count":0`; after directly calling `paper.Repository.Save` with a known entry through the harness's exposed repo, `GET /api/papers/arxiv/<source_id>` returns 200 with all 12 fields, and `GET /api/papers` returns a single-item list; saving two entries with different `SubmittedAt` values, list orders them newest-first (R3.2); saving two entries with the same `SourceID` but different `Source` values, both are visible in list and retrievable by their composite key (R1.3).
   - `go test -tags=integration -count=1 ./tests/integration/...` — all paper-endpoint cases pass alongside the pre-existing source and arxiv tests.
@@ -113,7 +113,7 @@
   - _Boundary: tests/integration (papers)_
   - _Depends: 7.2_
 
-- [ ] 8.2 (P) Arxiv fetch endpoint end-to-end with auto-persist + is_new + save-failure
+- [x] 8.2 (P) Arxiv fetch endpoint end-to-end with auto-persist + is_new + save-failure
   - Modify `tests/integration/arxiv_test.go`: augment the existing happy-path test to assert `is_new=true` on every returned entry on first call, `is_new=false` on an immediate second call, and `source="arxiv"` on every entry. After the first call, `GET /api/papers/arxiv/<first_source_id>` returns 200 with the stored entry (proves R5.1 persistence side effect).
   - New case: configure `TestEnvOpts.PaperRepo` with a fake whose `Save` returns `paper.ErrCatalogueUnavailable` → `GET /api/arxiv/fetch` returns HTTP 500 with the standard error envelope (R5.5). The fake records exactly one Save attempt before the short-circuit.
   - Removes any lingering "no datastore writes" assertion if one ever existed — integration coverage of this spec is the authoritative evidence that arxiv-fetcher's requirement 1.4 has been superseded (R5.6).

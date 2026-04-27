@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	sourcemodel "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
 )
 
@@ -13,6 +14,7 @@ import (
 func AutoMigrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&sourcemodel.Source{},
+		&paperpersist.Paper{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
