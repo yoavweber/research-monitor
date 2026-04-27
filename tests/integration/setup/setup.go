@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/yoavweber/research-monitor/backend/internal/application"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
@@ -79,6 +80,8 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	// Silence gorm in tests — production keeps its Warn-level logger.
+	db.Logger = gormlogger.Default.LogMode(gormlogger.Silent)
 	if err := persistence.AutoMigrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

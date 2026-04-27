@@ -91,6 +91,7 @@ func (l *liveArxivFetcher) Fetch(ctx context.Context, _ paper.Query) ([]paper.En
 func TestLiveArxiv_FullPath(t *testing.T) {
 	// Not parallel: a single live network roundtrip is easier to reason about
 	// (and to debug from logs) when nothing else is racing.
+	t.Logf("setup: building test server, hitting %s", liveQueryURL)
 	fetcher := &liveArxivFetcher{
 		client: httpclient.NewByteFetcher(15*time.Second, "research-monitor-manual-test"),
 	}
@@ -99,9 +100,14 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		ArxivQuery:   paper.Query{MaxResults: 2}, // ignored by liveArxivFetcher; required by harness contract
 	})
 	t.Cleanup(env.Close)
+	t.Logf("setup: server ready at %s", env.Server.URL)
 
-	// Step 1 — first fetch persists both entries.
+	t.Logf("step 1/4: GET /api/arxiv/fetch — first fetch should hit arxiv.org and persist both entries")
 	first := doFetch(t, env)
+	t.Logf("step 1/4: got %d entries; is_new=[%t,%t]; ids=[%s,%s]",
+		len(first.Entries),
+		first.Entries[0].IsNew, lastIsNew(first.Entries),
+		first.Entries[0].SourceID, lastSourceID(first.Entries))
 	if len(first.Entries) != 2 {
 		t.Fatalf("first fetch returned %d entries, want 2", len(first.Entries))
 	}
@@ -120,8 +126,9 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		}
 	}
 
-	// Step 2 — list endpoint must surface both persisted papers.
+	t.Logf("step 2/4: GET /api/papers — list endpoint must surface both persisted papers")
 	listed := doListPapers(t, env)
+	t.Logf("step 2/4: list returned count=%d", listed.Count)
 	if listed.Count != 2 {
 		t.Fatalf("/api/papers count=%d, want 2", listed.Count)
 	}
@@ -145,9 +152,9 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		}
 	}
 
-	// Step 3 — single-paper read-back returns the full record for the first
-	// pinned entry.
+	t.Logf("step 3/4: GET /api/papers/arxiv/%s — single-paper read-back", expected[0].SourceID)
 	one := doGetPaper(t, env, expected[0].SourceID)
+	t.Logf("step 3/4: got source_id=%q title=%q", one.SourceID, one.Title)
 	if one.SourceID != expected[0].SourceID {
 		t.Errorf("Get source_id=%q, want %q", one.SourceID, expected[0].SourceID)
 	}
@@ -155,10 +162,11 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		t.Errorf("Get title=%q, want %q", one.Title, expected[0].Title)
 	}
 
-	// Step 4 — second fetch hits dedupe; both entries come back with
-	// is_new=false. Proves the composite-unique-index works against real
-	// persisted rows, end-to-end.
+	t.Logf("step 4/4: GET /api/arxiv/fetch — second fetch should hit dedupe (is_new=false on both)")
 	second := doFetch(t, env)
+	t.Logf("step 4/4: got %d entries; is_new=[%t,%t]",
+		len(second.Entries),
+		second.Entries[0].IsNew, lastIsNew(second.Entries))
 	if len(second.Entries) != 2 {
 		t.Fatalf("second fetch returned %d entries, want 2", len(second.Entries))
 	}
@@ -171,6 +179,23 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 				i, e.SourceID, e.Title, expected[i].SourceID, expected[i].Title)
 		}
 	}
+}
+
+// lastIsNew / lastSourceID return the last entry's field or a sentinel when
+// the slice is shorter than expected — used only for narration, never for
+// assertions, so a soft fallback keeps the log line readable on partial data.
+func lastIsNew(entries []arxivctrl.EntryResponse) bool {
+	if len(entries) < 2 {
+		return false
+	}
+	return entries[1].IsNew
+}
+
+func lastSourceID(entries []arxivctrl.EntryResponse) string {
+	if len(entries) < 2 {
+		return "<missing>"
+	}
+	return entries[1].SourceID
 }
 
 // envelope wraps the production controller response in the common {"data": ...}

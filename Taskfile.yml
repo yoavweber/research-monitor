@@ -26,6 +26,13 @@ tasks:
     cmds:
       - go test -tags=integration ./tests/integration/...
 
+  test:manual:
+    desc: 'Run manual (live network) tests. Filter with RUN=<TestName>, e.g. `task test:manual RUN=TestLiveArxiv_FullPath`.'
+    vars:
+      RUN: '.'
+    cmds:
+      - go test -tags=manual -count=1 -v -run "{{.RUN}}" ./tests/manual/...
+
   lint:
     desc: Run golangci-lint
     cmds:
