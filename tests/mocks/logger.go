@@ -8,20 +8,16 @@ import (
 )
 
 // LogRecord captures a single structured-log emission so tests can assert
-// (level, msg, key=value args) without coupling to slog's concrete handler.
+// on (Level, Msg, Args) without parsing slog handler output.
 type LogRecord struct {
 	Level string
 	Msg   string
 	Args  map[string]any
 }
 
-// RecordingLogger is a hand-written shared.Logger fake that captures every
-// call into an in-memory slice. shared.Logger is an out-of-process port
-// (slog handlers write to stderr/stdout/syslog), so a real impl would either
-// emit to the test's stderr or require parsing log output — both noisier
-// than recording structured calls directly.
-//
-// Zero value is ready to use; concurrent calls are guarded by a mutex.
+// RecordingLogger is a shared.Logger fake that records every call into an
+// in-memory slice. Zero value is ready to use; concurrent calls are guarded
+// by a mutex.
 type RecordingLogger struct {
 	mu      sync.Mutex
 	Records []LogRecord

@@ -3,38 +3,14 @@ package paper_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/paper"
-	persistence "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
+	"github.com/yoavweber/research-monitor/backend/tests/testdb"
 )
-
-// newTestDB opens a fresh on-disk SQLite database in a temp dir with the
-// same TranslateError flag the production helper sets, so unique-violation
-// surfaces as gorm.ErrDuplicatedKey just like production.
-func newTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "papers_test.db")
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
-		Logger:         logger.Default.LogMode(logger.Silent),
-		TranslateError: true,
-	})
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if err := persistence.AutoMigrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
-}
 
 // newEntry returns a populated domain.Entry with deterministic timestamps so
 // round-trip assertions are not flaky on monotonic-clock differences.
@@ -59,7 +35,7 @@ func newEntry(source, sourceID string) domain.Entry {
 
 func TestRepository_Save_NewRow(t *testing.T) {
 	t.Parallel()
-	repo := paperrepo.NewRepository(newTestDB(t))
+	repo := paperrepo.NewRepository(testdb.New(t))
 	ctx := context.Background()
 
 	isNew, err := repo.Save(ctx, newEntry("arxiv", "2404.12345"))
@@ -73,7 +49,7 @@ func TestRepository_Save_NewRow(t *testing.T) {
 
 func TestRepository_Save_DedupeOnRepeat(t *testing.T) {
 	t.Parallel()
-	repo := paperrepo.NewRepository(newTestDB(t))
+	repo := paperrepo.NewRepository(testdb.New(t))
 	ctx := context.Background()
 	e := newEntry("arxiv", "2404.12345")
 
@@ -100,7 +76,7 @@ func TestRepository_Save_DedupeOnRepeat(t *testing.T) {
 
 func TestRepository_Save_SameSourceIDDifferentSourcePersistsBoth(t *testing.T) {
 	t.Parallel()
-	repo := paperrepo.NewRepository(newTestDB(t))
+	repo := paperrepo.NewRepository(testdb.New(t))
 	ctx := context.Background()
 
 	a := newEntry("arxiv", "2404.12345")
@@ -134,7 +110,7 @@ func TestRepository_Save_SameSourceIDDifferentSourcePersistsBoth(t *testing.T) {
 
 func TestRepository_FindByKey_Miss(t *testing.T) {
 	t.Parallel()
-	repo := paperrepo.NewRepository(newTestDB(t))
+	repo := paperrepo.NewRepository(testdb.New(t))
 
 	got, err := repo.FindByKey(context.Background(), "arxiv", "missing")
 	if got != nil {
@@ -147,7 +123,7 @@ func TestRepository_FindByKey_Miss(t *testing.T) {
 
 func TestRepository_List_OrdersBySubmittedAtDesc(t *testing.T) {
 	t.Parallel()
-	repo := paperrepo.NewRepository(newTestDB(t))
+	repo := paperrepo.NewRepository(testdb.New(t))
 	ctx := context.Background()
 
 	older := newEntry("arxiv", "older")
@@ -178,7 +154,7 @@ func TestRepository_List_OrdersBySubmittedAtDesc(t *testing.T) {
 
 func TestRepository_List_EmptyReturnsNonNilSlice(t *testing.T) {
 	t.Parallel()
-	repo := paperrepo.NewRepository(newTestDB(t))
+	repo := paperrepo.NewRepository(testdb.New(t))
 
 	got, err := repo.List(context.Background())
 	if err != nil {
@@ -194,7 +170,7 @@ func TestRepository_List_EmptyReturnsNonNilSlice(t *testing.T) {
 
 func TestRepository_RoundTrip_PreservesAuthorsAndCategories(t *testing.T) {
 	t.Parallel()
-	repo := paperrepo.NewRepository(newTestDB(t))
+	repo := paperrepo.NewRepository(testdb.New(t))
 	ctx := context.Background()
 
 	want := newEntry("arxiv", "2404.99999")
@@ -227,7 +203,7 @@ func TestRepository_RoundTrip_PreservesAuthorsAndCategories(t *testing.T) {
 
 func TestRepository_SentinelTranslation_OnDBFailure(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := testdb.New(t)
 	repo := paperrepo.NewRepository(db)
 	ctx := context.Background()
 
@@ -255,7 +231,7 @@ func TestRepository_SentinelTranslation_OnDBFailure(t *testing.T) {
 
 func TestAutoMigrate_CreatesCompositeIndex(t *testing.T) {
 	t.Parallel()
-	db := newTestDB(t)
+	db := testdb.New(t)
 
 	type indexRow struct {
 		Seq    int

@@ -3,46 +3,17 @@ package arxiv_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-
 	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
-	persistence "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
+	"github.com/yoavweber/research-monitor/backend/tests/testdb"
 )
 
-// newTestDB mirrors the helper in internal/infrastructure/persistence/paper/repo_test.go.
-// Steering (testing.md) prefers real over fake for paper.Repository so the
-// tests catch schema and migration bugs a hand-rolled fake would mask. We
-// rely on the same TranslateError flag production uses so unique-violation
-// surfaces as gorm.ErrDuplicatedKey just like in production.
-func newTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "papers_test.db")
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
-		Logger:         logger.Default.LogMode(logger.Silent),
-		TranslateError: true,
-	})
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if err := persistence.AutoMigrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
-}
-
-// newEntry returns a minimally valid domain.Entry. The repository requires a
-// non-zero SubmittedAt for List ordering and a non-empty (Source, SourceID)
-// for the dedupe composite key, so we fill those plus a unique title per id.
 func newEntry(sourceID string) paper.Entry {
 	submitted := time.Date(2024, 4, 1, 12, 0, 0, 0, time.UTC)
 	return paper.Entry{
@@ -73,7 +44,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		t.Parallel()
 		entries := []paper.Entry{newEntry("a"), newEntry("b"), newEntry("c")}
 		fetcher := &mocks.PaperFetcher{Entries: entries}
-		repo := paperrepo.NewRepository(newTestDB(t))
+		repo := paperrepo.NewRepository(testdb.New(t))
 		log := &mocks.RecordingLogger{}
 		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery())
 
@@ -98,11 +69,9 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 	t.Run("preserves fetcher order on mixed new and dedupe-skipped", func(t *testing.T) {
 		t.Parallel()
 		entries := []paper.Entry{newEntry("a"), newEntry("b"), newEntry("c")}
-		db := newTestDB(t)
+		db := testdb.New(t)
 		repo := paperrepo.NewRepository(db)
-		// Pre-seed entry "b" so its second Save is a real composite-key dedupe
-		// against the running SQLite — this is the steering-doc point: a real
-		// repo exercises the actual unique-index path, not a fake's flag.
+		// Pre-seed entry "b" so Save #2 hits the real composite-key dedupe.
 		if _, err := repo.Save(context.Background(), entries[1]); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
@@ -135,7 +104,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 	t.Run("skips repo and warns when fetcher returns a sentinel", func(t *testing.T) {
 		t.Parallel()
 		fetcher := &mocks.PaperFetcher{Error: paper.ErrUpstreamBadStatus}
-		repo := paperrepo.NewRepository(newTestDB(t))
+		repo := paperrepo.NewRepository(testdb.New(t))
 		log := &mocks.RecordingLogger{}
 		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery())
 
@@ -167,12 +136,10 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		t.Parallel()
 		entries := []paper.Entry{newEntry("a"), newEntry("b"), newEntry("c")}
 		fetcher := &mocks.PaperFetcher{Entries: entries}
-		// Step 3 of testing.md ("contract violation the real impl cannot
-		// produce"): we need Save #1 to succeed and Save #2 to return
-		// ErrCatalogueUnavailable so the third entry is never reached. A
-		// real SQLite repo can't selectively fail mid-loop without contrived
-		// setup (e.g. closing the DB between rows), so the canonical
-		// mocks.PaperRepo with a SaveResults queue is the right tool here.
+		// Mid-loop failure injection: Save #1 succeeds, #2 returns
+		// ErrCatalogueUnavailable, #3 must never fire. A real SQLite repo
+		// can't selectively fail one row in the middle of a loop, so the
+		// queued-result fake is the only way to drive this contract.
 		repo := &mocks.PaperRepo{SaveResults: []mocks.PaperRepoSaveResult{
 			{IsNew: true},
 			{IsNew: false, Err: paper.ErrCatalogueUnavailable},
