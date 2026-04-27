@@ -15,7 +15,17 @@ func NewLogger(appEnv string) shared.Logger {
 	if appEnv == "prod" {
 		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
 	} else {
-		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+		// Drop the timestamp in dev/test output — test runner adds its own,
+		// and the wall-clock prefix dominates each line otherwise.
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+			ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.TimeKey {
+					return slog.Attr{}
+				}
+				return a
+			},
+		})
 	}
 	return &slogLogger{l: slog.New(handler)}
 }

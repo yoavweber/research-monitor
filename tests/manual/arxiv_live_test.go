@@ -14,9 +14,11 @@ package manual_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,7 +93,7 @@ func (l *liveArxivFetcher) Fetch(ctx context.Context, _ paper.Query) ([]paper.En
 func TestLiveArxiv_FullPath(t *testing.T) {
 	// Not parallel: a single live network roundtrip is easier to reason about
 	// (and to debug from logs) when nothing else is racing.
-	t.Logf("setup: building test server, hitting %s", liveQueryURL)
+	logStep(t, "SETUP", "build test server + live fetcher pinned to %s", liveQueryURL)
 	fetcher := &liveArxivFetcher{
 		client: httpclient.NewByteFetcher(15*time.Second, "research-monitor-manual-test"),
 	}
@@ -100,14 +102,11 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		ArxivQuery:   paper.Query{MaxResults: 2}, // ignored by liveArxivFetcher; required by harness contract
 	})
 	t.Cleanup(env.Close)
-	t.Logf("setup: server ready at %s", env.Server.URL)
+	logResult(t, "server up at %s", env.Server.URL)
 
-	t.Logf("step 1/4: GET /api/arxiv/fetch — first fetch should hit arxiv.org and persist both entries")
+	logStep(t, "STEP 1/4", "first fetch — GET /api/arxiv/fetch (expect 2 new, fresh DB)")
 	first := doFetch(t, env)
-	t.Logf("step 1/4: got %d entries; is_new=[%t,%t]; ids=[%s,%s]",
-		len(first.Entries),
-		first.Entries[0].IsNew, lastIsNew(first.Entries),
-		first.Entries[0].SourceID, lastSourceID(first.Entries))
+	logResult(t, "got %d entries  %s", len(first.Entries), summariseEntries(first.Entries))
 	if len(first.Entries) != 2 {
 		t.Fatalf("first fetch returned %d entries, want 2", len(first.Entries))
 	}
@@ -126,9 +125,9 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		}
 	}
 
-	t.Logf("step 2/4: GET /api/papers — list endpoint must surface both persisted papers")
+	logStep(t, "STEP 2/4", "list — GET /api/papers (must surface both persisted papers)")
 	listed := doListPapers(t, env)
-	t.Logf("step 2/4: list returned count=%d", listed.Count)
+	logResult(t, "got count=%d", listed.Count)
 	if listed.Count != 2 {
 		t.Fatalf("/api/papers count=%d, want 2", listed.Count)
 	}
@@ -152,9 +151,9 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		}
 	}
 
-	t.Logf("step 3/4: GET /api/papers/arxiv/%s — single-paper read-back", expected[0].SourceID)
+	logStep(t, "STEP 3/4", "read-back — GET /api/papers/arxiv/%s", expected[0].SourceID)
 	one := doGetPaper(t, env, expected[0].SourceID)
-	t.Logf("step 3/4: got source_id=%q title=%q", one.SourceID, one.Title)
+	logResult(t, "%s  %q", one.SourceID, one.Title)
 	if one.SourceID != expected[0].SourceID {
 		t.Errorf("Get source_id=%q, want %q", one.SourceID, expected[0].SourceID)
 	}
@@ -162,11 +161,9 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 		t.Errorf("Get title=%q, want %q", one.Title, expected[0].Title)
 	}
 
-	t.Logf("step 4/4: GET /api/arxiv/fetch — second fetch should hit dedupe (is_new=false on both)")
+	logStep(t, "STEP 4/4", "second fetch — GET /api/arxiv/fetch (expect dedupe: is_new=false on both)")
 	second := doFetch(t, env)
-	t.Logf("step 4/4: got %d entries; is_new=[%t,%t]",
-		len(second.Entries),
-		second.Entries[0].IsNew, lastIsNew(second.Entries))
+	logResult(t, "got %d entries  %s", len(second.Entries), summariseEntries(second.Entries))
 	if len(second.Entries) != 2 {
 		t.Fatalf("second fetch returned %d entries, want 2", len(second.Entries))
 	}
@@ -181,21 +178,40 @@ func TestLiveArxiv_FullPath(t *testing.T) {
 	}
 }
 
-// lastIsNew / lastSourceID return the last entry's field or a sentinel when
-// the slice is shorter than expected — used only for narration, never for
-// assertions, so a soft fallback keeps the log line readable on partial data.
-func lastIsNew(entries []arxivctrl.EntryResponse) bool {
-	if len(entries) < 2 {
-		return false
-	}
-	return entries[1].IsNew
+// logStep prints a high-contrast section header so the four phases of the
+// test are skimmable in -v output. The leading newline gives breathing room
+// after the slog records emitted by the previous step.
+func logStep(t *testing.T, label, format string, args ...any) {
+	t.Helper()
+	t.Log("")
+	t.Logf("──── %s ──── %s", label, fmtMsg(format, args...))
 }
 
-func lastSourceID(entries []arxivctrl.EntryResponse) string {
-	if len(entries) < 2 {
-		return "<missing>"
+// logResult prints a follow-up line attributed to the step that just ran.
+func logResult(t *testing.T, format string, args ...any) {
+	t.Helper()
+	t.Logf("       └─ %s", fmtMsg(format, args...))
+}
+
+func fmtMsg(format string, args ...any) string {
+	if len(args) == 0 {
+		return format
 	}
-	return entries[1].SourceID
+	return fmt.Sprintf(format, args...)
+}
+
+// summariseEntries renders entries as "id1(new) id2(dup)" — short and
+// scannable, no truncation surprises since the live query is pinned to 2.
+func summariseEntries(entries []arxivctrl.EntryResponse) string {
+	parts := make([]string, 0, len(entries))
+	for _, e := range entries {
+		state := "dup"
+		if e.IsNew {
+			state = "new"
+		}
+		parts = append(parts, fmt.Sprintf("%s(%s)", e.SourceID, state))
+	}
+	return strings.Join(parts, " ")
 }
 
 // envelope wraps the production controller response in the common {"data": ...}
