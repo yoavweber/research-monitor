@@ -1,0 +1,22 @@
+{
+  "feature_name": "document-extraction",
+  "created_at": "2026-04-28T16:24:51Z",
+  "updated_at": "2026-04-29T00:30:00Z",
+  "language": "en",
+  "phase": "implementation",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}
