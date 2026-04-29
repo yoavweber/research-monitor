@@ -19,3 +19,10 @@ type Error struct {
 func Data(v any) Envelope                 { return Envelope{Data: v} }
 func DataWithMeta(v any, m Meta) Envelope { return Envelope{Data: v, Meta: &m} }
 func Err(code int, msg string) Envelope   { return Envelope{Error: &Error{Code: code, Message: msg}} }
+
+// ErrorEnvelope is the documented wire shape for failure responses (used by
+// every @Failure swag annotation). It mirrors the JSON Envelope produces
+// when only the error field is set.
+type ErrorEnvelope struct {
+	Error *Error `json:"error"`
+}

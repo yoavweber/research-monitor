@@ -111,7 +111,7 @@
   - _Requirements: 1.2, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
   - _Depends: 3.2, 3.3_
 
-- [ ] 3.5 (P) Implement the HTTP controller, wire DTOs, and OpenAPI annotations
+- [x] 3.5 (P) Implement the HTTP controller, wire DTOs, and OpenAPI annotations
   - Author `SubmitExtractionRequest` (json tags + binding rules for `source_type`, `source_id`, `pdf_path`) with `Validate() error`; author `ExtractionStatusResponse` plus envelope wrappers (`ExtractionStatusEnvelope`) using `omitempty` so artifact fields render only when `status == "done"` and failure fields render only when `status == "failed"`
   - Author `ExtractionController.Submit` (`POST /api/extractions` → `202` with `{id, status: "pending"}`) and `ExtractionController.Get` (`GET /api/extractions/:id` → `200` with the conditional response body); surface domain sentinels via `c.Error` for the existing `ErrorEnvelope` middleware
   - Add swag annotations covering `@Summary`, `@Tags Extractions`, `@Accept json`, `@Produce json`, `@Param`, `@Success 202`, `@Success 200`, `@Failure 400`, `@Failure 401`, `@Failure 404`, `@Failure 500` (each `{object} common.ErrorEnvelope`), `@Security APIToken`, `@Router /extractions ...` per the existing paper / arxiv controllers; run `task swag` and confirm `docs/` regenerates with both endpoints
