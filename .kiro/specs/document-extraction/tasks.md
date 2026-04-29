@@ -67,7 +67,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 6.2_
   - _Depends: 2.2_
 
-- [ ] 3. Core implementation: normalizer, repository, use case, worker, controller, route
+- [x] 3. Core implementation: normalizer, repository, use case, worker, controller, route
 
 - [x] 3.1 (P) Implement the pure-domain normalizer
   - Author `Normalize(markdown, fallbackTitle string) NormalizedArtifact` as a pure function (no I/O, no time, no random)
@@ -122,7 +122,7 @@
   - _Boundary: interface http extraction controller_
   - _Depends: 1.4_
 
-- [ ] 3.6 Wire ExtractionRouter and extend route.Deps
+- [x] 3.6 Wire ExtractionRouter and extend route.Deps
   - Add `ExtractionConfig` (carrying the persisted `extraction.Repository`, the `extraction.UseCase`, and a handle for the worker so route-level smoke tests can inspect it) to `route.Deps`
   - Author `ExtractionRouter(d Deps)` that constructs `ExtractionController` from `d.Extraction.UseCase` and registers `POST /api/extractions` and `GET /api/extractions/:id` under the `/api` group (the `APIToken` middleware is already mounted there)
   - Call `ExtractionRouter(d)` from `route.Setup`
