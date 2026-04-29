@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: extraction config, domain types and ports, persistence schema
+- [x] 1. Foundation: extraction config, domain types and ports, persistence schema
 
 - [x] 1.1 (P) Add the extraction configuration block to bootstrap env
   - Add `EXTRACTION_MAX_WORDS` (default 50000), `EXTRACTION_SIGNAL_BUFFER` (default 10), `EXTRACTION_JOB_EXPIRY` (default 1h, parsed as a duration), `MINERU_PATH` (default `mineru`), and `MINERU_TIMEOUT` (default 10m) to the viper-backed env loader, mirroring the existing arxiv config style
@@ -29,7 +29,7 @@
   - Observable: `Validate()` is exercised by a table-driven unit test covering each rejection case; the table asserts `errors.Is(err, ErrInvalidRequest)` or `errors.Is(err, ErrUnsupportedSourceType)` per case
   - _Requirements: 1.3, 6.1_
 
-- [ ] 1.5 (P) Implement the extractions persistence model and register the migration
+- [x] 1.5 (P) Implement the extractions persistence model and register the migration
   - Define the GORM `Extraction` row matching the design's physical schema: composite `uniqueIndex:idx_extractions_source_source_id` on `(source_type, source_id)`, composite `index:idx_extractions_status_created_at` on `(status, created_at)`, JSON-encoded `request_payload`, default-empty body / metadata / failure columns, and `TableName() = "extractions"`
   - Implement `FromDomain` (UUID assigned here, `Authors`/`Categories`-style JSON marshal of `request_payload`) and `ToDomain` round-tripping every column
   - Append `&extraction.Extraction{}` to `persistence.AutoMigrate`
@@ -163,3 +163,9 @@
   - _Requirements: 1.1, 1.2, 2.1, 2.2, 3.1, 3.3, 3.5, 3.6, 3.7, 3.8, 6.1, 6.2_
   - _Boundary: tests integration mineru e2e_
   - _Depends: 4_
+
+## Implementation Notes
+
+- **Task 1.5 follow-up**: the `ToDomain` malformed-`request_payload` JSON path wraps as `extraction.ErrCatalogueUnavailable` in code but is not yet exercised by a test. Add a malformed-JSON test alongside the repository tests in Task 3.2, where the read-side error path is naturally exercised end-to-end.
+- **Worktree**: foundation phase committed on branch `worktree-document-extraction` at `backend/.claude/worktrees/document-extraction`. Spec files were committed on `main` as `a4a27d0` and fast-forwarded into the worktree branch; pre-existing uncommitted changes on `main` are unrelated to this spec and were not touched.
+- **MinerU adapter backend choice**: the design and tasks pin `mineru -b pipeline -p ... -o ...` (not the default `hybrid-auto-engine`). Rationale captured in `research.md` "Decision: MinerU 3.x with the pipeline backend". The VLM model weights (~2.2 GB) are intentionally NOT downloaded; only the pipeline weights at `~/.cache/huggingface/hub/models--opendatalab--PDF-Extract-Kit-1.0` are required.
