@@ -1,3 +1,10 @@
+// @title           Research Monitor API
+// @version         1.0
+// @description     HTTP API for the research monitor (arXiv ingestion + paper catalogue).
+// @BasePath        /api
+// @securityDefinitions.apikey APIToken
+// @in              header
+// @name            Authorization
 package main
 
 import (
@@ -5,6 +12,8 @@ import (
 	"log"
 
 	"github.com/yoavweber/research-monitor/backend/internal/bootstrap"
+
+	_ "github.com/yoavweber/research-monitor/backend/docs"
 )
 
 func main() {

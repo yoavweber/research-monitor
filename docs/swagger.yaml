@@ -1,0 +1,422 @@
+basePath: /api
+definitions:
+  github_com_yoavweber_research-monitor_backend_internal_domain_source.CreateRequest:
+    properties:
+      kind:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Kind'
+      name:
+        type: string
+      url:
+        type: string
+    required:
+    - kind
+    - name
+    - url
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_domain_source.Kind:
+    enum:
+    - rss
+    - api
+    type: string
+    x-enum-varnames:
+    - KindRSS
+    - KindAPI
+  github_com_yoavweber_research-monitor_backend_internal_domain_source.Response:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      kind:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Kind'
+      last_fetched_at:
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_domain_source.UpdateRequest:
+    properties:
+      is_active:
+        type: boolean
+      name:
+        type: string
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_http_common.Error:
+    properties:
+      code:
+        type: integer
+      details:
+        additionalProperties: {}
+        type: object
+      message:
+        type: string
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope:
+    properties:
+      error:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.Error'
+    type: object
+  internal_http_controller.SourceEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Response'
+    type: object
+  internal_http_controller.SourceListEnvelope:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Response'
+        type: array
+    type: object
+  internal_http_controller_arxiv.EntryResponse:
+    properties:
+      abs_url:
+        type: string
+      abstract:
+        type: string
+      authors:
+        items:
+          type: string
+        type: array
+      categories:
+        items:
+          type: string
+        type: array
+      is_new:
+        type: boolean
+      pdf_url:
+        type: string
+      primary_category:
+        type: string
+      source:
+        type: string
+      source_id:
+        type: string
+      submitted_at:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_http_controller_arxiv.FetchEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/internal_http_controller_arxiv.FetchResponse'
+    type: object
+  internal_http_controller_arxiv.FetchResponse:
+    properties:
+      count:
+        type: integer
+      entries:
+        items:
+          $ref: '#/definitions/internal_http_controller_arxiv.EntryResponse'
+        type: array
+      fetched_at:
+        type: string
+    type: object
+  internal_http_controller_paper.PaperEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/internal_http_controller_paper.PaperResponse'
+    type: object
+  internal_http_controller_paper.PaperListEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/internal_http_controller_paper.PaperListResponse'
+    type: object
+  internal_http_controller_paper.PaperListResponse:
+    properties:
+      count:
+        type: integer
+      papers:
+        items:
+          $ref: '#/definitions/internal_http_controller_paper.PaperResponse'
+        type: array
+    type: object
+  internal_http_controller_paper.PaperResponse:
+    properties:
+      abs_url:
+        type: string
+      abstract:
+        type: string
+      authors:
+        items:
+          type: string
+        type: array
+      categories:
+        items:
+          type: string
+        type: array
+      pdf_url:
+        type: string
+      primary_category:
+        type: string
+      source:
+        type: string
+      source_id:
+        type: string
+      submitted_at:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: HTTP API for the research monitor (arXiv ingestion + paper catalogue).
+  title: Research Monitor API
+  version: "1.0"
+paths:
+  /arxiv/fetch:
+    get:
+      description: |-
+        Triggers an arXiv fetch + persist cycle. No body, no query params.
+        Returns the fetched entries with per-entry is_new derived from
+        whether persistence inserted a new row for that paper.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Fetched entries
+          schema:
+            $ref: '#/definitions/internal_http_controller_arxiv.FetchEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "500":
+          description: Catalogue unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "502":
+          description: Upstream arXiv returned a non-success or malformed response
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "504":
+          description: Upstream arXiv unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Fetch latest arXiv entries
+      tags:
+      - Arxiv
+  /papers:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paper catalogue
+          schema:
+            $ref: '#/definitions/internal_http_controller_paper.PaperListEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "500":
+          description: Catalogue unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: List all persisted papers
+      tags:
+      - Papers
+  /papers/{source}/{source_id}:
+    get:
+      parameters:
+      - description: Source identifier (e.g. 'arxiv')
+        in: path
+        name: source
+        required: true
+        type: string
+      - description: Source-local paper id (e.g. arXiv id)
+        in: path
+        name: source_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paper found
+          schema:
+            $ref: '#/definitions/internal_http_controller_paper.PaperEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Paper not found
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "500":
+          description: Catalogue unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Get a paper by source + source_id
+      tags:
+      - Papers
+  /sources:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Sources
+          schema:
+            $ref: '#/definitions/internal_http_controller.SourceListEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: List all sources
+      tags:
+      - Sources
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Source to create
+        in: body
+        name: source
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created source
+          schema:
+            $ref: '#/definitions/internal_http_controller.SourceEnvelope'
+        "400":
+          description: Invalid JSON body or validation error
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "409":
+          description: Source URL already exists
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Create a source
+      tags:
+      - Sources
+  /sources/{id}:
+    delete:
+      parameters:
+      - description: Source ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Source not found
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Delete a source
+      tags:
+      - Sources
+    get:
+      parameters:
+      - description: Source ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Source
+          schema:
+            $ref: '#/definitions/internal_http_controller.SourceEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Source not found
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Get a source by ID
+      tags:
+      - Sources
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Source ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: source
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.UpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated source
+          schema:
+            $ref: '#/definitions/internal_http_controller.SourceEnvelope'
+        "400":
+          description: Invalid JSON body or validation error
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Source not found
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Update a source
+      tags:
+      - Sources
+securityDefinitions:
+  APIToken:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -43,6 +43,11 @@ tasks:
     cmds:
       - go mod tidy
 
+  swag:
+    desc: Regenerate OpenAPI docs (writes ./docs)
+    cmds:
+      - swag init -g cmd/api/main.go -o docs --parseInternal --parseDependency
+
   db:reset:
     desc: Delete the SQLite DB and restart
     cmds:

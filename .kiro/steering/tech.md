@@ -2,7 +2,7 @@
 
 ## Stack
 
-- **Language:** Go 1.22
+- **Language:** Go 1.25
 - **HTTP:** Gin (`github.com/gin-gonic/gin`)
 - **Persistence:** GORM (`gorm.io/gorm`) + SQLite (`gorm.io/driver/sqlite`). Swappable to Postgres via driver change; Repository port is DB-agnostic.
 - **Config:** viper-backed flat struct (`internal/bootstrap/env.go`), env + `.env`.
@@ -10,6 +10,7 @@
 - **IDs:** `github.com/google/uuid`.
 - **Task runner:** Taskfile (`task run`, `task test`, ...).
 - **Lint:** golangci-lint with `errcheck`, `gosec`, `govet`, `staticcheck`, `contextcheck`, `ineffassign`, `unused`.
+- **API docs:** `github.com/swaggo/gin-swagger` + `github.com/swaggo/swag`. Run `task swag` after editing controller annotations. Generated `docs/` is committed. UI mounted at `/swagger/index.html` only when `APP_ENV != prod`.
 
 ## Planned (later plans)
 
@@ -17,7 +18,6 @@
 - RSS: `github.com/mmcdole/gofeed` behind `domain/article.RSSFetcher`.
 - HTML extraction: `github.com/JohannesKaufmann/html-to-markdown`.
 - PDF extraction: `github.com/ledongthuc/pdf`.
-- API docs: `github.com/swaggo/gin-swagger` + `github.com/swaggo/swag`.
 
 ## Testing
 

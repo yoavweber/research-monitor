@@ -1,0 +1,655 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "HTTP API for the research monitor (arXiv ingestion + paper catalogue).",
+        "title": "Research Monitor API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/api",
+    "paths": {
+        "/arxiv/fetch": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "description": "Triggers an arXiv fetch + persist cycle. No body, no query params.\nReturns the fetched entries with per-entry is_new derived from\nwhether persistence inserted a new row for that paper.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Arxiv"
+                ],
+                "summary": "Fetch latest arXiv entries",
+                "responses": {
+                    "200": {
+                        "description": "Fetched entries",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_arxiv.FetchEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Catalogue unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "502": {
+                        "description": "Upstream arXiv returned a non-success or malformed response",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "504": {
+                        "description": "Upstream arXiv unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/papers": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Papers"
+                ],
+                "summary": "List all persisted papers",
+                "responses": {
+                    "200": {
+                        "description": "Paper catalogue",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_paper.PaperListEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Catalogue unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/papers/{source}/{source_id}": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Papers"
+                ],
+                "summary": "Get a paper by source + source_id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source identifier (e.g. 'arxiv')",
+                        "name": "source",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Source-local paper id (e.g. arXiv id)",
+                        "name": "source_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paper found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_paper.PaperEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Paper not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Catalogue unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/sources": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sources"
+                ],
+                "summary": "List all sources",
+                "responses": {
+                    "200": {
+                        "description": "Sources",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller.SourceListEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sources"
+                ],
+                "summary": "Create a source",
+                "parameters": [
+                    {
+                        "description": "Source to create",
+                        "name": "source",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.CreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created source",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller.SourceEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid JSON body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Source URL already exists",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/sources/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sources"
+                ],
+                "summary": "Get a source by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Source",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller.SourceEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Source not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "tags": [
+                    "Sources"
+                ],
+                "summary": "Delete a source",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Deleted"
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Source not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sources"
+                ],
+                "summary": "Update a source",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "source",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.UpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated source",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller.SourceEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid JSON body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Source not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_yoavweber_research-monitor_backend_internal_domain_source.CreateRequest": {
+            "type": "object",
+            "required": [
+                "kind",
+                "name",
+                "url"
+            ],
+            "properties": {
+                "kind": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Kind"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_domain_source.Kind": {
+            "type": "string",
+            "enum": [
+                "rss",
+                "api"
+            ],
+            "x-enum-varnames": [
+                "KindRSS",
+                "KindAPI"
+            ]
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_domain_source.Response": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Kind"
+                },
+                "last_fetched_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_domain_source.UpdateRequest": {
+            "type": "object",
+            "properties": {
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_http_common.Error": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.Error"
+                }
+            }
+        },
+        "internal_http_controller.SourceEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Response"
+                }
+            }
+        },
+        "internal_http_controller.SourceListEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Response"
+                    }
+                }
+            }
+        },
+        "internal_http_controller_arxiv.EntryResponse": {
+            "type": "object",
+            "properties": {
+                "abs_url": {
+                    "type": "string"
+                },
+                "abstract": {
+                    "type": "string"
+                },
+                "authors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "is_new": {
+                    "type": "boolean"
+                },
+                "pdf_url": {
+                    "type": "string"
+                },
+                "primary_category": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_http_controller_arxiv.FetchEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_http_controller_arxiv.FetchResponse"
+                }
+            }
+        },
+        "internal_http_controller_arxiv.FetchResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_http_controller_arxiv.EntryResponse"
+                    }
+                },
+                "fetched_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_http_controller_paper.PaperEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_http_controller_paper.PaperResponse"
+                }
+            }
+        },
+        "internal_http_controller_paper.PaperListEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_http_controller_paper.PaperListResponse"
+                }
+            }
+        },
+        "internal_http_controller_paper.PaperListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "papers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_http_controller_paper.PaperResponse"
+                    }
+                }
+            }
+        },
+        "internal_http_controller_paper.PaperResponse": {
+            "type": "object",
+            "properties": {
+                "abs_url": {
+                    "type": "string"
+                },
+                "abstract": {
+                    "type": "string"
+                },
+                "authors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pdf_url": {
+                    "type": "string"
+                },
+                "primary_category": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "APIToken": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
