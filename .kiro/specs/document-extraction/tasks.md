@@ -49,7 +49,7 @@
   - _Boundary: infrastructure extraction mineru_
   - _Depends: 1.1, 1.3, 1.4_
 
-- [ ] 2.2 Author the mineru-tagged adapter integration test
+- [x] 2.2 Author the mineru-tagged adapter integration test
   - Place the test under `tests/integration/extraction_mineru_adapter_test.go` with a `//go:build mineru` directive
   - Resolve the fixture at runtime via `wd, _ := os.Getwd(); pdfPath := filepath.Join(wd, "testdata", "amm_arbitrage_with_fees.pdf")` (no hardcoded absolute path)
   - Construct the MinerU adapter via its public constructor, assign to a variable typed as `extraction.Extractor`, and call `Extract(ctx, ExtractInput{PDFPath: pdfPath})` directly
