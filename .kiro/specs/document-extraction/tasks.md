@@ -2,7 +2,7 @@
 
 - [ ] 1. Foundation: extraction config, domain types and ports, persistence schema
 
-- [ ] 1.1 (P) Add the extraction configuration block to bootstrap env
+- [x] 1.1 (P) Add the extraction configuration block to bootstrap env
   - Add `EXTRACTION_MAX_WORDS` (default 50000), `EXTRACTION_SIGNAL_BUFFER` (default 10), `EXTRACTION_JOB_EXPIRY` (default 1h, parsed as a duration), `MINERU_PATH` (default `mineru`), and `MINERU_TIMEOUT` (default 10m) to the viper-backed env loader, mirroring the existing arxiv config style
   - Reject startup when `EXTRACTION_JOB_EXPIRY` parses to zero or a negative duration, and when `EXTRACTION_MAX_WORDS` or `EXTRACTION_SIGNAL_BUFFER` are non-positive
   - Cover the new fields with env-loader unit tests asserting defaults apply when vars are absent and that malformed durations and non-positive integers fail-fast at boot

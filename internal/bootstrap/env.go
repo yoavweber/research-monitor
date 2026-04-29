@@ -2,7 +2,9 @@ package bootstrap
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -18,6 +20,18 @@ type Env struct {
 	ArxivCategoriesRaw string   `mapstructure:"ARXIV_CATEGORIES"`
 	ArxivCategories    []string `mapstructure:"-"` // populated post-Unmarshal
 	ArxivMaxResults    int      `mapstructure:"ARXIV_MAX_RESULTS"`
+
+	// Extraction service config (requirements 4.4, 5.2, 6.6). Durations are
+	// parsed post-Unmarshal from raw strings so we can fail-fast at startup
+	// with an env-var-named error rather than letting viper silently coerce
+	// invalid input to zero.
+	ExtractionMaxWords     int           `mapstructure:"EXTRACTION_MAX_WORDS"`
+	ExtractionSignalBuffer int           `mapstructure:"EXTRACTION_SIGNAL_BUFFER"`
+	ExtractionJobExpiryRaw string        `mapstructure:"EXTRACTION_JOB_EXPIRY"`
+	ExtractionJobExpiry    time.Duration `mapstructure:"-"` // populated post-Unmarshal
+	MineruPath             string        `mapstructure:"MINERU_PATH"`
+	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
+	MineruTimeout          time.Duration `mapstructure:"-"` // populated post-Unmarshal
 }
 
 func LoadEnv() (*Env, error) {
@@ -34,6 +48,11 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("SQLITE_PATH", "./data/app.db")
 	v.SetDefault("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 	v.SetDefault("ARXIV_BASE_URL", "https://export.arxiv.org/api/query")
+	v.SetDefault("EXTRACTION_MAX_WORDS", 50000)
+	v.SetDefault("EXTRACTION_SIGNAL_BUFFER", 10)
+	v.SetDefault("EXTRACTION_JOB_EXPIRY", "1h")
+	v.SetDefault("MINERU_PATH", "mineru")
+	v.SetDefault("MINERU_TIMEOUT", "10m")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
 	// observes it even when no .env file and no default exists. Without this,
@@ -48,6 +67,11 @@ func LoadEnv() (*Env, error) {
 		"ARXIV_BASE_URL",
 		"ARXIV_CATEGORIES",
 		"ARXIV_MAX_RESULTS",
+		"EXTRACTION_MAX_WORDS",
+		"EXTRACTION_SIGNAL_BUFFER",
+		"EXTRACTION_JOB_EXPIRY",
+		"MINERU_PATH",
+		"MINERU_TIMEOUT",
 	} {
 		_ = v.BindEnv(key)
 	}
@@ -77,6 +101,45 @@ func LoadEnv() (*Env, error) {
 	if env.ArxivMaxResults < 1 || env.ArxivMaxResults > 30000 {
 		return nil, fmt.Errorf("ARXIV_MAX_RESULTS must be between 1 and 30000 (got %d)", env.ArxivMaxResults)
 	}
+
+	// Extraction config validation (requirements 4.4, 5.2, 6.6). Each rejection
+	// returns a wrapped error before we hand back any *Env, so a misconfigured
+	// process never observes a half-built config.
+	if env.ExtractionMaxWords <= 0 {
+		return nil, fmt.Errorf("EXTRACTION_MAX_WORDS must be positive (got %d)", env.ExtractionMaxWords)
+	}
+	if env.ExtractionSignalBuffer <= 0 {
+		return nil, fmt.Errorf("EXTRACTION_SIGNAL_BUFFER must be positive (got %d)", env.ExtractionSignalBuffer)
+	}
+
+	jobExpiry, err := time.ParseDuration(env.ExtractionJobExpiryRaw)
+	if err != nil {
+		return nil, fmt.Errorf("EXTRACTION_JOB_EXPIRY must be a valid Go duration (got %q): %w", env.ExtractionJobExpiryRaw, err)
+	}
+	if jobExpiry <= 0 {
+		return nil, fmt.Errorf("EXTRACTION_JOB_EXPIRY must be a positive duration (got %s)", jobExpiry)
+	}
+	env.ExtractionJobExpiry = jobExpiry
+
+	// Reject empty MINERU_PATH. Viper falls back to its default when the env
+	// var is unset, so we must check the raw env explicitly: an operator who
+	// writes `MINERU_PATH=` is signalling a misconfiguration we refuse rather
+	// than silently papering over with the `mineru` default.
+	if rawPath, present := os.LookupEnv("MINERU_PATH"); present && rawPath == "" {
+		return nil, fmt.Errorf("MINERU_PATH is required and must be a non-empty executable name or path")
+	}
+	if strings.TrimSpace(env.MineruPath) == "" {
+		return nil, fmt.Errorf("MINERU_PATH is required and must be a non-empty executable name or path")
+	}
+
+	mineruTimeout, err := time.ParseDuration(env.MineruTimeoutRaw)
+	if err != nil {
+		return nil, fmt.Errorf("MINERU_TIMEOUT must be a valid Go duration (got %q): %w", env.MineruTimeoutRaw, err)
+	}
+	if mineruTimeout <= 0 {
+		return nil, fmt.Errorf("MINERU_TIMEOUT must be a positive duration (got %s)", mineruTimeout)
+	}
+	env.MineruTimeout = mineruTimeout
 
 	return &env, nil
 }
