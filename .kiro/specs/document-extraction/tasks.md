@@ -17,7 +17,7 @@
   - _Requirements: 4.5, 5.1_
   - _Boundary: domain extraction model_
 
-- [ ] 1.3 (P) Declare the extraction error sentinels
+- [x] 1.3 (P) Declare the extraction error sentinels
   - Define `ErrInvalidRequest` (400), `ErrUnsupportedSourceType` (400), `ErrNotFound` (404), `ErrCatalogueUnavailable` (500), `ErrInvalidTransition` (500), `ErrScannedPDF`, `ErrParseFailed`, `ErrExtractorFailure` as `*shared.HTTPError` values, mirroring the `paper.errors.go` shape
   - Observable: a unit test wraps each sentinel via `fmt.Errorf("%w: ...")` and confirms `errors.As` recovers it and `shared.AsHTTPError` returns the expected status code
   - _Requirements: 1.3, 2.5, 4.1, 4.2, 4.3, 6.6_
