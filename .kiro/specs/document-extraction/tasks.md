@@ -40,7 +40,7 @@
 
 - [ ] 2. MinerU verification gate: subprocess adapter + sample-locked normalizer contract
 
-- [ ] 2.1 Implement the MinerU subprocess adapter
+- [x] 2.1 Implement the MinerU subprocess adapter
   - Construct the adapter via `NewMineruExtractor(path, timeout)` returning `extraction.Extractor`
   - Per-call: create a fresh temp directory under `os.TempDir()`, derive a child `context.WithTimeout` from the call-site `ctx` using `mineruTimeout`, invoke `exec.CommandContext(ctx, mineruPath, "-b", "pipeline", "-p", pdfPath, "-o", tmpDir)` (the `-b pipeline` flag is mandatory; pins the adapter to the pipeline backend so no VLM weights are required), read the produced bundle's single `.md` file into memory, and clean up the temp directory in a deferred call that runs on every return path including panics
   - Implement the design's CLI-error classification table mapping to `ErrScannedPDF`, `ErrParseFailed`, `ErrExtractorFailure`, with `ctx.Err()` returned as-is for cancellation
