@@ -3,8 +3,8 @@ package extraction
 import "time"
 
 // JobStatus is the lifecycle state of an Extraction row. Every extraction
-// progresses through pending → running → done | failed (Requirement 5.1);
-// done and failed are terminal.
+// progresses through pending → running → done | failed; done and failed are
+// terminal.
 type JobStatus string
 
 const (
@@ -16,7 +16,7 @@ const (
 
 // FailureReason is the typed taxonomy of terminal failure causes. The six
 // constants are mutually exclusive: any single extraction carries at most one
-// reason (Requirement 4.5).
+// reason.
 type FailureReason string
 
 const (
@@ -29,9 +29,8 @@ const (
 )
 
 // Metadata holds the post-normalization descriptors mirrored on a successful
-// Artifact. ContentType mirrors RequestPayload.SourceType (Requirement 3.8);
-// WordCount is the whitespace-token count of the normalized body
-// (Requirement 3.7).
+// Artifact. ContentType mirrors RequestPayload.SourceType; WordCount is the
+// whitespace-token count of the normalized body.
 type Metadata struct {
 	ContentType string
 	WordCount   int

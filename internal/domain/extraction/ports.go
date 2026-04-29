@@ -19,10 +19,10 @@ type Repository interface {
 
 	// PeekNextPending returns the oldest pending row (oldest by created_at)
 	// without transitioning its status. ok=false signals an empty queue. The
-	// returned row's request_payload is the worker's execution input. The
-	// worker calls this first so the pickup-time expiry predicate (Requirement
-	// 5.2) is evaluated while the row is still pending — an expired row is
-	// marked failed without ever entering running.
+	// returned row's RequestPayload is the worker's execution input. Peek-
+	// before-claim lets the worker evaluate the pickup-time expiry predicate
+	// while the row is still pending so an expired row is marked failed
+	// without ever entering running.
 	PeekNextPending(ctx context.Context) (row *Extraction, ok bool, err error)
 
 	// ClaimPending atomically transitions a specific row from pending to
@@ -88,7 +88,7 @@ type UseCase interface {
 // hint, or a typed domain error from a fixed taxonomy. Implementations live
 // under internal/infrastructure/extraction/<tool>/. Replacing the tool does
 // not change the request, response, status, or failure-reason behaviour of
-// the surrounding system (Requirement 6.1).
+// the surrounding system.
 type Extractor interface {
 	// Extract reads the PDF at in.PDFPath and returns either a non-empty
 	// Markdown body or one of four error categories: ErrScannedPDF (no

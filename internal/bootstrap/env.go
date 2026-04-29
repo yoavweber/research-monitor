@@ -21,17 +21,15 @@ type Env struct {
 	ArxivCategories    []string `mapstructure:"-"` // populated post-Unmarshal
 	ArxivMaxResults    int      `mapstructure:"ARXIV_MAX_RESULTS"`
 
-	// Extraction service config (requirements 4.4, 5.2, 6.6). Durations are
-	// parsed post-Unmarshal from raw strings so we can fail-fast at startup
-	// with an env-var-named error rather than letting viper silently coerce
-	// invalid input to zero.
+	// Durations parse post-Unmarshal so a malformed value fails fast with the
+	// offending env-var name; viper would otherwise silently coerce to zero.
 	ExtractionMaxWords     int           `mapstructure:"EXTRACTION_MAX_WORDS"`
 	ExtractionSignalBuffer int           `mapstructure:"EXTRACTION_SIGNAL_BUFFER"`
 	ExtractionJobExpiryRaw string        `mapstructure:"EXTRACTION_JOB_EXPIRY"`
-	ExtractionJobExpiry    time.Duration `mapstructure:"-"` // populated post-Unmarshal
+	ExtractionJobExpiry    time.Duration `mapstructure:"-"`
 	MineruPath             string        `mapstructure:"MINERU_PATH"`
 	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
-	MineruTimeout          time.Duration `mapstructure:"-"` // populated post-Unmarshal
+	MineruTimeout          time.Duration `mapstructure:"-"`
 }
 
 func LoadEnv() (*Env, error) {
@@ -102,29 +100,22 @@ func LoadEnv() (*Env, error) {
 		return nil, fmt.Errorf("ARXIV_MAX_RESULTS must be between 1 and 30000 (got %d)", env.ArxivMaxResults)
 	}
 
-	// Extraction config validation (requirements 4.4, 5.2, 6.6). Each rejection
-	// returns a wrapped error before we hand back any *Env, so a misconfigured
-	// process never observes a half-built config.
-	if env.ExtractionMaxWords <= 0 {
-		return nil, fmt.Errorf("EXTRACTION_MAX_WORDS must be positive (got %d)", env.ExtractionMaxWords)
+	if err := requirePositiveInt("EXTRACTION_MAX_WORDS", env.ExtractionMaxWords); err != nil {
+		return nil, err
 	}
-	if env.ExtractionSignalBuffer <= 0 {
-		return nil, fmt.Errorf("EXTRACTION_SIGNAL_BUFFER must be positive (got %d)", env.ExtractionSignalBuffer)
+	if err := requirePositiveInt("EXTRACTION_SIGNAL_BUFFER", env.ExtractionSignalBuffer); err != nil {
+		return nil, err
 	}
 
-	jobExpiry, err := time.ParseDuration(env.ExtractionJobExpiryRaw)
+	jobExpiry, err := parsePositiveDuration("EXTRACTION_JOB_EXPIRY", env.ExtractionJobExpiryRaw)
 	if err != nil {
-		return nil, fmt.Errorf("EXTRACTION_JOB_EXPIRY must be a valid Go duration (got %q): %w", env.ExtractionJobExpiryRaw, err)
-	}
-	if jobExpiry <= 0 {
-		return nil, fmt.Errorf("EXTRACTION_JOB_EXPIRY must be a positive duration (got %s)", jobExpiry)
+		return nil, err
 	}
 	env.ExtractionJobExpiry = jobExpiry
 
-	// Reject empty MINERU_PATH. Viper falls back to its default when the env
-	// var is unset, so we must check the raw env explicitly: an operator who
-	// writes `MINERU_PATH=` is signalling a misconfiguration we refuse rather
-	// than silently papering over with the `mineru` default.
+	// Viper substitutes the MINERU_PATH default when the env var is unset,
+	// but a literal `MINERU_PATH=` from the operator is a misconfiguration
+	// we want to refuse rather than silently paper over with the default.
 	if rawPath, present := os.LookupEnv("MINERU_PATH"); present && rawPath == "" {
 		return nil, fmt.Errorf("MINERU_PATH is required and must be a non-empty executable name or path")
 	}
@@ -132,16 +123,31 @@ func LoadEnv() (*Env, error) {
 		return nil, fmt.Errorf("MINERU_PATH is required and must be a non-empty executable name or path")
 	}
 
-	mineruTimeout, err := time.ParseDuration(env.MineruTimeoutRaw)
+	mineruTimeout, err := parsePositiveDuration("MINERU_TIMEOUT", env.MineruTimeoutRaw)
 	if err != nil {
-		return nil, fmt.Errorf("MINERU_TIMEOUT must be a valid Go duration (got %q): %w", env.MineruTimeoutRaw, err)
-	}
-	if mineruTimeout <= 0 {
-		return nil, fmt.Errorf("MINERU_TIMEOUT must be a positive duration (got %s)", mineruTimeout)
+		return nil, err
 	}
 	env.MineruTimeout = mineruTimeout
 
 	return &env, nil
+}
+
+func requirePositiveInt(name string, v int) error {
+	if v <= 0 {
+		return fmt.Errorf("%s must be positive (got %d)", name, v)
+	}
+	return nil
+}
+
+func parsePositiveDuration(name, raw string) (time.Duration, error) {
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid Go duration (got %q): %w", name, raw, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration (got %s)", name, d)
+	}
+	return d, nil
 }
 
 func parseCategories(raw string) []string {
