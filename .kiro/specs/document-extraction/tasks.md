@@ -87,7 +87,7 @@
   - _Boundary: infrastructure persistence extraction_
   - _Depends: 1.5_
 
-- [ ] 3.3 Implement the extraction use case
+- [x] 3.3 Implement the extraction use case
   - Author `extractionUseCase` taking `Repository`, `Extractor`, `shared.Logger`, `shared.Clock`, and a `chan<- struct{}` wake channel via the constructor
   - `Submit`: re-validate `source_type == "paper"` (mirrors the controller's `Validate` for non-HTTP entrypoints), call `Repository.Upsert`, on `*PriorState` non-nil emit a structured `extraction.reextract` log line carrying id / source key / prior status / prior failure reason, then a non-blocking `select` send on the wake channel
   - `Process`: invoke `Extractor.Extract`, on `ctx.Err()` return without writing (row stays in `running` for next-boot recovery), otherwise call `Normalize` with the source filename basename as `fallbackTitle`, apply the `max_words` gate (`failed: too_large` carrying the actual count and configured threshold in the message), populate `Artifact.Metadata.ContentType` from the request `source_type`, and call `MarkDone` or `MarkFailed` with the centralised error-to-`FailureReason` mapping (`ErrScannedPDF → scanned_pdf`, `ErrParseFailed → parse_failed`, `ErrExtractorFailure → extractor_failure`)
