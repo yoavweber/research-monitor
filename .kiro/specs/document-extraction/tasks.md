@@ -131,7 +131,7 @@
   - _Requirements: 1.4, 2.6_
   - _Depends: 3.5_
 
-- [ ] 4. Compose extraction in bootstrap and validate startup recovery
+- [x] 4. Compose extraction in bootstrap and validate startup recovery
   - Wire `bootstrap/app.go`: build `mineruExtractor` from env (`MINERU_PATH`, `MINERU_TIMEOUT`), construct the `extraction.Repository`, allocate the buffered wake channel sized by `EXTRACTION_SIGNAL_BUFFER`, build `extractionUseCase` (passing the send-side of the channel), build `Worker` (passing the receive-side, `EXTRACTION_JOB_EXPIRY`, the logger and `shared.SystemClock{}`), populate `route.Deps.Extraction`
   - Run `Repository.RecoverRunningOnStartup(appCtx)` BEFORE registering routes; abort `NewApp` with a wrapped error if it fails (Requirement 6.6)
   - Enumerate `Repository.ListPendingIDs(appCtx)` and perform one non-blocking `select` send per id on the wake channel; only then call `Worker.Start(appCtx)` so the goroutine drains pre-existing pending rows without operator action
