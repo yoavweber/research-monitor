@@ -10,7 +10,7 @@
   - _Requirements: 4.4, 5.2, 6.6_
   - _Boundary: bootstrap env_
 
-- [ ] 1.2 (P) Define the extraction domain value types
+- [x] 1.2 (P) Define the extraction domain value types
   - Declare `Artifact`, `Metadata`, `RequestPayload`, `Failure`, `Extraction` aggregate, `JobStatus` constants (`pending`, `running`, `done`, `failed`), `FailureReason` constants (`scanned_pdf`, `parse_failed`, `extractor_failure`, `too_large`, `expired`, `process_restart`), `NormalizedArtifact`, `ExtractInput`, `ExtractOutput`, and `PriorState`
   - Add a package-level doc comment that names the aggregate's purpose and its `(source_type, source_id)` keying convention
   - Observable: the package compiles standalone and a value-types unit test enumerates exactly the four declared `JobStatus` constants and the six declared `FailureReason` constants, failing if either set drifts
