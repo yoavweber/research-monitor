@@ -78,7 +78,7 @@
   - _Boundary: domain extraction normalize_
   - _Depends: 2.3_
 
-- [ ] 3.2 (P) Implement the GORM-backed extraction repository
+- [x] 3.2 (P) Implement the GORM-backed extraction repository
   - Implement `Upsert` (insert-then-on-conflict-overwrite using `gorm.ErrDuplicatedKey`, refreshing `created_at` and clearing body / failure columns, capturing prior `(status, failure_reason)` as `*PriorState` inside the same transaction); `FindByID`; `PeekNextPending` (pure SELECT, no UPDATE); `ClaimPending` (UPDATE with `WHERE id=? AND status='pending'`, zero-rows-affected → `ErrInvalidTransition`); `MarkDone` (UPDATE with `WHERE id=? AND status='running'`); `MarkFailed` (UPDATE with reason-conditional WHERE: `status='pending'` for `FailureReasonExpired`, `status='running'` otherwise); `RecoverRunningOnStartup` (idempotent flip of every `running` row to `failed: process_restart`); `ListPendingIDs`
   - Map `gorm.ErrRecordNotFound` to `ErrNotFound`, all other DB errors to wrappings of `ErrCatalogueUnavailable`
   - Real-DB tests over `:memory:` SQLite per `testing.md`: insert success, conflict overwrite returning the captured `PriorState`, peek-without-transition (asserted by re-reading the row's status after peek), claim-from-pending success, claim-from-running `ErrInvalidTransition`, `MarkFailed(_, FailureReasonExpired, _)` accepts pending and rejects running, `MarkFailed` for any other reason rejects pending, `RecoverRunningOnStartup` is idempotent across two consecutive calls, `request_payload` JSON round-trips losslessly, `FindByID` on a missing id returns `ErrNotFound`
