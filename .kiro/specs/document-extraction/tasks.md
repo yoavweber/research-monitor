@@ -69,7 +69,7 @@
 
 - [ ] 3. Core implementation: normalizer, repository, use case, worker, controller, route
 
-- [ ] 3.1 (P) Implement the pure-domain normalizer
+- [x] 3.1 (P) Implement the pure-domain normalizer
   - Author `Normalize(markdown, fallbackTitle string) NormalizedArtifact` as a pure function (no I/O, no time, no random)
   - Implement: math delimiter rewrite (`\(...\) → $...$`, `\[...\] → $$...$$`, `$/$$` pass-through); references / bibliography / works-cited tail truncation (case-insensitive, exact heading text match across `#` through `######`); GFM-table / image-line / figure-caption skipping; whitespace collapse after removals; first `#` heading title selection with `fallbackTitle` fallback; `len(strings.Fields(body))` word count
   - Cover every rule in a table-driven unit test, plus the no-references-heading case (no truncation), the no-`#`-heading case (fallback used), and a body with mixed-whitespace runs to exercise the word-count contract
