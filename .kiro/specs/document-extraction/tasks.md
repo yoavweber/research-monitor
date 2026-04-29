@@ -23,7 +23,7 @@
   - _Requirements: 1.3, 2.5, 4.1, 4.2, 4.3, 6.6_
   - _Boundary: domain extraction errors_
 
-- [ ] 1.4 Declare the extraction ports and submission request DTO
+- [x] 1.4 Declare the extraction ports and submission request DTO
   - Author the `Repository`, `UseCase`, and `Extractor` interfaces matching the design's service-interface code blocks verbatim, with `context.Context` as the first parameter on every method
   - Author `SubmitRequest` with a `Validate() error` method that rejects empty `source_type` / `source_id` / `pdf_path` and any `source_type` other than `paper`
   - Observable: `Validate()` is exercised by a table-driven unit test covering each rejection case; the table asserts `errors.Is(err, ErrInvalidRequest)` or `errors.Is(err, ErrUnsupportedSourceType)` per case
