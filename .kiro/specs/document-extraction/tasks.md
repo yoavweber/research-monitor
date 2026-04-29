@@ -38,7 +38,7 @@
   - _Boundary: infrastructure persistence extraction_
   - _Depends: 1.2_
 
-- [ ] 2. MinerU verification gate: subprocess adapter + sample-locked normalizer contract
+- [x] 2. MinerU verification gate: subprocess adapter + sample-locked normalizer contract
 
 - [x] 2.1 Implement the MinerU subprocess adapter
   - Construct the adapter via `NewMineruExtractor(path, timeout)` returning `extraction.Extractor`
@@ -58,7 +58,7 @@
   - _Requirements: 6.2_
   - _Depends: 2.1_
 
-- [ ] 2.3 Sample-verify MinerU output and lock the normalizer contract
+- [x] 2.3 Sample-verify MinerU output and lock the normalizer contract
   - Run the test from 2.2 against the fixture on a host with MinerU installed; capture the logged markdown body
   - Compare the observed output to the design's normalizer rules: math delimiter format (`$/$$` vs `\(...\)` / `\[...\]`), heading levels and exact text used for references / bibliography / works-cited sections, table syntax (GFM pipes vs HTML), image lines, figure-caption prefix patterns
   - If observed output matches the design contract: ratchet the assertions in `extraction_mineru_adapter_test.go` from "expected fail" placeholders into the regression guard so the test now passes under `-tags mineru`

@@ -113,8 +113,27 @@ func classifyRunError(runErr error, combined []byte) error {
 	}
 
 	// Catch-all: covers exec.LookPath ENOENT (binary missing), non-zero exits
-	// without recognised markers, and any other run-time failure.
-	return fmt.Errorf("%w: %v", extraction.ErrExtractorFailure, runErr)
+	// without recognised markers, and any other run-time failure. Tail of the
+	// combined output is included so the operator can diagnose unfamiliar
+	// MinerU error shapes without having to re-run with stderr capture.
+	tail := lastNonEmptyLines(combined, 5)
+	if tail == "" {
+		return fmt.Errorf("%w: %v", extraction.ErrExtractorFailure, runErr)
+	}
+	return fmt.Errorf("%w: %v: %s", extraction.ErrExtractorFailure, runErr, tail)
+}
+
+func lastNonEmptyLines(buf []byte, n int) string {
+	lines := strings.Split(strings.TrimRight(string(buf), "\n"), "\n")
+	out := make([]string, 0, n)
+	for i := len(lines) - 1; i >= 0 && len(out) < n; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		out = append([]string{line}, out...)
+	}
+	return strings.Join(out, " | ")
 }
 
 // findBundleMarkdown locates the single `.md` file MinerU's pipeline backend
