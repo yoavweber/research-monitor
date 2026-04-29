@@ -98,7 +98,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.5, 1.6, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 3.6, 3.8, 4.1, 4.2, 4.3, 4.4, 4.5, 5.7_
   - _Depends: 3.1, 3.2_
 
-- [ ] 3.4 Implement the worker and its critical-path tests
+- [x] 3.4 Implement the worker and its critical-path tests
   - Author `Worker` owning the wake channel handle (constructor takes `extraction.UseCase`, `shared.Logger`, `shared.Clock`, `<-chan struct{}` receive end, plus the configured `job_expiry` duration); expose `Start(ctx)` (launches a single goroutine non-blocking) and `Stop()` (blocks until the goroutine exits)
   - Goroutine loop: receive a wake → enter drain loop calling `PeekNextPending`; for each peeked row, evaluate `clock.Now() >= peeked.CreatedAt + job_expiry` and on overrun call `Repository.MarkFailed(id, FailureReasonExpired, msg)` from `pending`; otherwise call `Repository.ClaimPending(id)` then `UseCase.Process(ctx, row)`; continue draining until peek returns empty; on `ctx.Done()` return without writing any expiry / failure for the in-flight row
   - Extend the `extraction.Extractor` fake (or add a sibling test helper) so it can block on a per-test channel until cancellation is observed — required by the worker shutdown test
