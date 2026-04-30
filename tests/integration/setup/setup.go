@@ -1,4 +1,4 @@
-//go:build integration || manual
+//go:build integration || manual || mineru
 
 package setup
 

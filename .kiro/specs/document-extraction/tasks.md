@@ -141,7 +141,7 @@
   - _Requirements: 1.4, 2.6, 5.5, 5.6, 6.5, 6.6_
   - _Depends: 2.1, 3.2, 3.4, 3.6_
 
-- [ ] 5. Validation: hermetic integration and MinerU end-to-end
+- [x] 5. Validation: hermetic integration and MinerU end-to-end
 
 - [x] 5.1 (P) Author the hermetic extraction integration suite
   - Extend `tests/integration/setup.SetupTestEnv` so the test harness can inject a hand-written fake `extraction.Extractor` (mirrors the existing fake-fetcher injection pattern); the fake returns scripted `ExtractOutput` / typed-error sequences per test
@@ -152,7 +152,7 @@
   - _Boundary: tests integration hermetic_
   - _Depends: 4_
 
-- [ ] 5.2 (P) Author the mineru-tagged end-to-end test and ratchet final assertions
+- [x] 5.2 (P) Author the mineru-tagged end-to-end test and ratchet final assertions
   - Place the test at `tests/integration/extraction_mineru_e2e_test.go` with `//go:build mineru`
   - Resolve the fixture at runtime via `wd, _ := os.Getwd(); pdfPath := filepath.Join(wd, "testdata", "amm_arbitrage_with_fees.pdf")` — never a hardcoded absolute path
   - Boot `SetupTestEnv` configured to wire the **real** MinerU adapter (env-driven), POST `/api/extractions` with `{ "source_type": "paper", "source_id": "amm-arbitrage-fees", "pdf_path": pdfPath }`, poll `GET /api/extractions/:id` every 2 seconds until `status == "done"` or the 5-minute deadline expires; on timeout fail with the last observed row state
