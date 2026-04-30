@@ -143,7 +143,7 @@
 
 - [ ] 5. Validation: hermetic integration and MinerU end-to-end
 
-- [ ] 5.1 (P) Author the hermetic extraction integration suite
+- [x] 5.1 (P) Author the hermetic extraction integration suite
   - Extend `tests/integration/setup.SetupTestEnv` so the test harness can inject a hand-written fake `extraction.Extractor` (mirrors the existing fake-fetcher injection pattern); the fake returns scripted `ExtractOutput` / typed-error sequences per test
   - Place the suite at `tests/integration/extraction_test.go` with `//go:build integration`
   - Cases: `401` without `X-API-Token`; `400` on missing `pdf_path`; `400` on `source_type=html`; `404` on `GET` with an unknown id; happy path POST → poll until `done` with the fake returning a markdown body that exercises math delimiters and a references heading (verifying normalization end-to-end); re-extraction overwrites in place and the second `GET` returns the new artifact while the row id is unchanged; oversized body with `EXTRACTION_MAX_WORDS=1` → `failed: too_large` with the actual count and threshold in the message; scanned-PDF fake returning `ErrScannedPDF` → `failed: scanned_pdf`
