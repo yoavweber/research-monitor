@@ -28,10 +28,24 @@ func NewPaperController(repo paper.Repository) *PaperController {
 	return &PaperController{repo: repo}
 }
 
+// Get godoc
+//
 // Get handles GET /api/papers/:source/:source_id. Path params are pulled via
 // c.Param; the repo translates a missing row into paper.ErrNotFound and any
 // other storage failure into paper.ErrCatalogueUnavailable. On either error we
 // hand off to c.Error so ErrorEnvelope renders the final status and envelope.
+//
+// @Summary      Get a paper by source + source_id
+// @Tags         Papers
+// @Produce      json
+// @Param        source     path      string  true  "Source identifier (e.g. 'arxiv')"
+// @Param        source_id  path      string  true  "Source-local paper id (e.g. arXiv id)"
+// @Success      200        {object}  PaperEnvelope         "Paper found"
+// @Failure      401        {object}  common.ErrorEnvelope  "Missing or invalid API token"
+// @Failure      404        {object}  common.ErrorEnvelope  "Paper not found"
+// @Failure      500        {object}  common.ErrorEnvelope  "Catalogue unavailable"
+// @Security     APIToken
+// @Router       /papers/{source}/{source_id} [get]
 func (ctrl *PaperController) Get(c *gin.Context) {
 	source := c.Param("source")
 	sourceID := c.Param("source_id")
@@ -44,8 +58,19 @@ func (ctrl *PaperController) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, common.Data(ToPaperResponse(*entry)))
 }
 
+// List godoc
+//
 // List handles GET /api/papers. The repo is the source of ordering — the
 // controller returns whatever order the repo emits without re-sorting.
+//
+// @Summary      List all persisted papers
+// @Tags         Papers
+// @Produce      json
+// @Success      200  {object}  PaperListEnvelope     "Paper catalogue"
+// @Failure      401  {object}  common.ErrorEnvelope  "Missing or invalid API token"
+// @Failure      500  {object}  common.ErrorEnvelope  "Catalogue unavailable"
+// @Security     APIToken
+// @Router       /papers [get]
 func (ctrl *PaperController) List(c *gin.Context) {
 	entries, err := ctrl.repo.List(c.Request.Context())
 	if err != nil {

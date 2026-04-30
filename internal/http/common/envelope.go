@@ -20,9 +20,9 @@ func Data(v any) Envelope                 { return Envelope{Data: v} }
 func DataWithMeta(v any, m Meta) Envelope { return Envelope{Data: v, Meta: &m} }
 func Err(code int, msg string) Envelope   { return Envelope{Error: &Error{Code: code, Message: msg}} }
 
-// ErrorEnvelope is the documented wire shape for failure responses (used by
-// every @Failure swag annotation). It mirrors the JSON Envelope produces
-// when only the error field is set.
+// ErrorEnvelope is the schema-only wrapper used by every @Failure annotation.
+// It mirrors the runtime shape produced by the ErrorEnvelope middleware so the
+// generated OpenAPI document accurately describes error responses.
 type ErrorEnvelope struct {
-	Error *Error `json:"error"`
+	Error Error `json:"error"`
 }

@@ -30,6 +30,18 @@ type PaperListResponse struct {
 	Count  int             `json:"count"`
 }
 
+// PaperEnvelope and PaperListEnvelope are schema-only wrappers used by the
+// @Success annotations on GET /api/papers/:source/:source_id and
+// GET /api/papers respectively. They exist so the OpenAPI schema accurately
+// describes the {"data": ...} runtime envelope; neither is ever instantiated.
+type PaperEnvelope struct {
+	Data PaperResponse `json:"data"`
+}
+
+type PaperListEnvelope struct {
+	Data PaperListResponse `json:"data"`
+}
+
 // ToPaperResponse maps a single domain Entry into its wire DTO.
 func ToPaperResponse(e paper.Entry) PaperResponse {
 	return PaperResponse{

@@ -10,6 +10,13 @@ import (
 	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
 )
 
+// FetchEnvelope is the schema-only wrapper for the 200 response of
+// GET /api/arxiv/fetch. It exists so the OpenAPI schema accurately describes
+// the {"data": ...} runtime envelope; it is never instantiated.
+type FetchEnvelope struct {
+	Data FetchResponse `json:"data"`
+}
+
 // FetchResponse is the top-level wire shape for GET /api/arxiv/fetch. It is
 // always wrapped by the common.Envelope "data" field at the controller layer.
 type FetchResponse struct {

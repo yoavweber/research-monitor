@@ -67,6 +67,17 @@ Cross-cutting ports (`Logger`, `Clock`, `LLMClient`, `Extractor`, `APIFetcher`) 
 - Middleware applied at group level in `Setup`.
 - Controllers bind JSON directly into domain request DTOs.
 
+### 6.1 OpenAPI annotations
+
+Every HTTP handler must carry a swag annotation block. Required tags:
+`@Summary`, `@Tags` (PascalCase domain word), `@Produce` (`@Accept` if a body
+is consumed), `@Param` for every path/query/body input, `@Success` with a
+typed envelope wrapper (e.g. `PaperListEnvelope`), one `@Failure` per
+distinct status the handler can surface (always `{object} common.ErrorEnvelope`),
+`@Security APIToken` if the route is under the authenticated `/api` group,
+and `@Router`. Run `task swag` before commit when annotations change; the
+generated `docs/` is committed.
+
 ## 7. Naming
 
 | Thing | Pattern |
@@ -98,6 +109,7 @@ viper-backed flat struct in `bootstrap/env.go`. Fields tagged `mapstructure:"ENV
 ## 12. Testing
 
 - `tests/integration/` — cross-package integration tests (build tag `integration`).
+- `tests/integration/setup/` — shared HTTP+DB harness (`SetupTestEnv(t)`) that wires real `repo → usecase → controller` against a temp SQLite DB. Integration tests use this; they do not build their own engine.
 - `tests/mocks/` — all hand-written fakes.
 - Unit tests colocated (`*_test.go`).
 - Every test calls `t.Parallel()`.

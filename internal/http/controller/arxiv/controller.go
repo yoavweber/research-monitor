@@ -26,11 +26,27 @@ func NewArxivController(uc arxivapp.UseCase, clock shared.Clock) *ArxivControlle
 	return &ArxivController{uc: uc, clock: clock}
 }
 
+// Fetch godoc
+//
 // Fetch handles GET /api/arxiv/fetch. It takes no body and no query params;
 // auth is enforced at the /api group level by the pre-existing APIToken
 // middleware. On use-case error we hand off to c.Error — the ErrorEnvelope
 // middleware translates *shared.HTTPError sentinels (paper.ErrUpstream*,
 // paper.ErrCatalogueUnavailable) into the final status and envelope.
+//
+// @Summary      Fetch latest arXiv entries
+// @Description  Triggers an arXiv fetch + persist cycle. No body, no query params.
+// @Description  Returns the fetched entries with per-entry is_new derived from
+// @Description  whether persistence inserted a new row for that paper.
+// @Tags         Arxiv
+// @Produce      json
+// @Success      200  {object}  FetchEnvelope         "Fetched entries"
+// @Failure      401  {object}  common.ErrorEnvelope  "Missing or invalid API token"
+// @Failure      500  {object}  common.ErrorEnvelope  "Catalogue unavailable"
+// @Failure      502  {object}  common.ErrorEnvelope  "Upstream arXiv returned a non-success or malformed response"
+// @Failure      504  {object}  common.ErrorEnvelope  "Upstream arXiv unavailable"
+// @Security     APIToken
+// @Router       /arxiv/fetch [get]
 func (ctrl *ArxivController) Fetch(c *gin.Context) {
 	results, err := ctrl.uc.Fetch(c.Request.Context())
 	if err != nil {

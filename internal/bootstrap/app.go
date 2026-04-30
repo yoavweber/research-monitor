@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
@@ -56,6 +58,13 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		middleware.Recovery(logger),
 		middleware.ErrorEnvelope(),
 	)
+
+	// Swagger UI is mounted outside the /api group so it is not gated by the
+	// APIToken middleware, and only in non-prod environments — production must
+	// not expose the schema or the UI.
+	if env.AppEnv != "prod" {
+		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	}
 
 	// The byte fetcher owns the long-lived *http.Client (connection pooling)
 	// and the User-Agent arXiv sees on every outbound call. Contact URL in
