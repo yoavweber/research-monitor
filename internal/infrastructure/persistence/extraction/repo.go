@@ -172,85 +172,58 @@ func (r *repository) PeekNextPending(ctx context.Context) (*domain.Extraction, b
 	}
 }
 
-// ClaimPending atomically transitions a row from pending to running. The
-// status='pending' predicate in the WHERE clause makes this race-safe: a
-// second concurrent claimer observes RowsAffected==0 and gets
-// ErrInvalidTransition rather than silently re-running.
 func (r *repository) ClaimPending(ctx context.Context, id string) error {
-	now := time.Now().UTC()
-	tx := r.db.WithContext(ctx).
-		Model(&Extraction{}).
-		Where("id = ? AND status = ?", id, domain.JobStatusPending).
-		Updates(map[string]any{
-			"status":     domain.JobStatusRunning,
-			"updated_at": now,
-		})
-	if tx.Error != nil {
-		return fmt.Errorf("%w: %v", domain.ErrCatalogueUnavailable, tx.Error)
-	}
-	if tx.RowsAffected == 0 {
-		return fmt.Errorf("%w: row %s is not in pending", domain.ErrInvalidTransition, id)
-	}
-	return nil
+	return r.transition(ctx, id, domain.JobStatusPending, map[string]any{
+		"status": domain.JobStatusRunning,
+	}, "claim_pending")
 }
 
-// MarkDone writes the artifact and transitions running -> done. The
-// status='running' predicate enforces the precondition: a zero-rows-affected
-// UPDATE means the row is no longer in running (already done / failed /
-// pending) and surfaces as ErrInvalidTransition.
 func (r *repository) MarkDone(ctx context.Context, id string, artifact domain.Artifact) error {
-	now := time.Now().UTC()
-	tx := r.db.WithContext(ctx).
-		Model(&Extraction{}).
-		Where("id = ? AND status = ?", id, domain.JobStatusRunning).
-		Updates(map[string]any{
-			"status":                domain.JobStatusDone,
-			"body_markdown":         artifact.BodyMarkdown,
-			"metadata_content_type": artifact.Metadata.ContentType,
-			"metadata_word_count":   artifact.Metadata.WordCount,
-			"title":                 artifact.Title,
-			"updated_at":            now,
-		})
-	if tx.Error != nil {
-		return fmt.Errorf("%w: %v", domain.ErrCatalogueUnavailable, tx.Error)
-	}
-	if tx.RowsAffected == 0 {
-		return fmt.Errorf("%w: row %s is not in running (mark_done)", domain.ErrInvalidTransition, id)
-	}
-	return nil
+	return r.transition(ctx, id, domain.JobStatusRunning, map[string]any{
+		"status":                domain.JobStatusDone,
+		"body_markdown":         artifact.BodyMarkdown,
+		"metadata_content_type": artifact.Metadata.ContentType,
+		"metadata_word_count":   artifact.Metadata.WordCount,
+		"title":                 artifact.Title,
+	}, "mark_done")
 }
 
-// MarkFailed transitions a row to failed with the given reason and message.
-// The allowed prior status is reason-conditional:
-//   - FailureReasonExpired: prior status MUST be pending. The expiry
-//     predicate is evaluated at pickup, before the worker claims, so an
-//     expired row is failed straight from pending without ever going running.
-//   - any other reason: prior status MUST be running. Extractor-side and
-//     normalization-side failures only happen during the running phase.
+// MarkFailed's allowed prior status is reason-conditional: FailureReasonExpired
+// requires pending (expiry is decided at pickup, before any claim); every
+// other reason requires running.
 func (r *repository) MarkFailed(ctx context.Context, id string, reason domain.FailureReason, message string) error {
 	expectedPrior := domain.JobStatusRunning
 	if reason == domain.FailureReasonExpired {
 		expectedPrior = domain.JobStatusPending
 	}
-	now := time.Now().UTC()
+	return r.transition(ctx, id, expectedPrior, map[string]any{
+		"status":          domain.JobStatusFailed,
+		"failure_reason":  reason,
+		"failure_message": message,
+	}, fmt.Sprintf("mark_failed reason=%s", reason))
+}
 
+// transition runs an UPDATE gated on (id, status=expectedPrior). Zero rows
+// affected surfaces as ErrInvalidTransition; driver errors as
+// ErrCatalogueUnavailable. opName flows into the diagnostic so a failed
+// transition names the operation that tripped it.
+func (r *repository) transition(
+	ctx context.Context,
+	id string,
+	expectedPrior domain.JobStatus,
+	updates map[string]any,
+	opName string,
+) error {
+	updates["updated_at"] = time.Now().UTC()
 	tx := r.db.WithContext(ctx).
 		Model(&Extraction{}).
 		Where("id = ? AND status = ?", id, expectedPrior).
-		Updates(map[string]any{
-			"status":          domain.JobStatusFailed,
-			"failure_reason":  reason,
-			"failure_message": message,
-			"updated_at":      now,
-		})
+		Updates(updates)
 	if tx.Error != nil {
 		return fmt.Errorf("%w: %v", domain.ErrCatalogueUnavailable, tx.Error)
 	}
 	if tx.RowsAffected == 0 {
-		return fmt.Errorf(
-			"%w: row %s is not in %s (mark_failed reason=%s)",
-			domain.ErrInvalidTransition, id, expectedPrior, reason,
-		)
+		return fmt.Errorf("%w: row %s is not in %s (%s)", domain.ErrInvalidTransition, id, expectedPrior, opName)
 	}
 	return nil
 }

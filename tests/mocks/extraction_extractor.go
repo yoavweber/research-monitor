@@ -7,39 +7,23 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 )
 
-// ExtractorFake is a hand-written extraction.Extractor fake for unit tests.
-// It records every ExtractInput it receives, returns caller-configured Output
-// or Err, and exposes a BlockUntil channel so tests that need to observe an
-// in-flight extraction (notably the worker shutdown test in Task 3.4) can
-// pin Extract on a deterministic synchronization point.
-//
-// Zero value is ready to use: Extract returns the zero ExtractOutput with no
-// error until Output or Err is set. A mutex guards recorded state for safety
-// when tests dispatch concurrent calls.
+// ExtractorFake is a hand-written extraction.Extractor fake. Zero value is
+// usable: Extract returns the zero ExtractOutput with nil err until Output /
+// Err is set. BlockUntil, when non-nil, gates Extract on a channel receive so
+// tests can observe an in-flight extraction at a deterministic point — the
+// worker shutdown test relies on this. Mutex-guarded so concurrent test
+// dispatches don't race against recorded state.
 type ExtractorFake struct {
 	mu sync.Mutex
 
-	// Output is returned to callers when Err is nil.
-	Output extraction.ExtractOutput
-	// Err, when non-nil, is returned in place of Output. Tests typically set
-	// this to one of the extraction.ErrScannedPDF / ErrParseFailed /
-	// ErrExtractorFailure sentinels, or to context.Canceled.
-	Err error
-
-	// BlockUntil, if non-nil, causes Extract to receive from this channel
-	// before returning. Tests close (or send on) the channel to release the
-	// in-flight call. Used by the Task 3.4 worker shutdown test to deterministically
-	// freeze a Process call mid-flight.
+	Output     extraction.ExtractOutput
+	Err        error
 	BlockUntil chan struct{}
 
-	// Calls captures every ExtractInput passed to Extract, in call order.
-	Calls []extraction.ExtractInput
-	// CallCount is incremented on every Extract call.
+	Calls     []extraction.ExtractInput
 	CallCount int
 }
 
-// Extract satisfies extraction.Extractor. It records the call, optionally
-// blocks on BlockUntil, and returns the configured Output / Err.
 func (f *ExtractorFake) Extract(ctx context.Context, in extraction.ExtractInput) (extraction.ExtractOutput, error) {
 	f.mu.Lock()
 	f.CallCount++
@@ -63,8 +47,6 @@ func (f *ExtractorFake) Extract(ctx context.Context, in extraction.ExtractInput)
 	return out, nil
 }
 
-// RecordedCalls returns a copy of the recorded ExtractInput slice under lock,
-// so callers can iterate without racing against an in-flight Extract.
 func (f *ExtractorFake) RecordedCalls() []extraction.ExtractInput {
 	f.mu.Lock()
 	defer f.mu.Unlock()

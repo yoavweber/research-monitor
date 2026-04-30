@@ -113,11 +113,10 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		env.ExtractionJobExpiry,
 	)
 
-	// Startup recovery flip: every row left in `running` from a prior
-	// process exit is transitioned to `failed: process_restart` BEFORE the
-	// worker starts and BEFORE any HTTP request is served. A failure here
-	// is fail-fast — Requirement 6.6 — because a partially-recovered
-	// catalogue could re-run an extraction whose state we lost track of.
+	// Recover running rows from a prior process exit BEFORE the worker
+	// starts and BEFORE the first HTTP request is served. Fail-fast: a
+	// partially-recovered catalogue could re-run an extraction whose state
+	// we lost track of.
 	recovered, err := extractionRepo.RecoverRunningOnStartup(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("extraction recover on startup: %w", err)
@@ -126,25 +125,14 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		logger.InfoContext(ctx, "extraction.recovery.flipped", "count", recovered)
 	}
 
-	// Self-signal one wake per pre-existing pending row so the worker
-	// drains the queue without operator action. Non-blocking sends mirror
-	// the use-case-side semantics: the channel is empty and the buffer is
-	// sized for the typical pending count, so all sends should land — but
-	// the non-blocking pattern protects against a misconfigured tiny buffer.
-	pendingIDs, err := extractionRepo.ListPendingIDs(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("extraction list pending on startup: %w", err)
-	}
-	for range pendingIDs {
-		select {
-		case wakeCh <- struct{}{}:
-		default:
-		}
+	// One wake is enough: the worker drains the entire queue per signal,
+	// re-checking the DB after every Process. A buffered self-signal kicks
+	// the goroutine into its first drain pass without blocking startup.
+	select {
+	case wakeCh <- struct{}{}:
+	default:
 	}
 
-	// Worker starts AFTER recovery + self-signal so the goroutine's first
-	// drain pass picks up the seeded backlog. The worker holds the receive
-	// end of wakeCh; cancellation of ctx is the sole exit signal.
 	extractionWorker.Start(ctx)
 
 	api := engine.Group("/api", middleware.APIToken(env.APIToken))
