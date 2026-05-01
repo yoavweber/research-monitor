@@ -55,7 +55,7 @@ func TestExtractionRouter_RegistersEndpoints(t *testing.T) {
 			ID:     "ext-1",
 			Status: extraction.JobStatusPending,
 			RequestPayload: extraction.RequestPayload{
-				SourceType: "arxiv",
+				SourceType: "paper",
 				SourceID:   "2501.00001",
 				PDFPath:    "/tmp/x.pdf",
 			},
@@ -70,7 +70,7 @@ func TestExtractionRouter_RegistersEndpoints(t *testing.T) {
 		body   []byte
 	}{
 		{"POST_extractions", http.MethodPost, "/api/extractions",
-			[]byte(`{"source_type":"arxiv","source_id":"2501.00001","pdf_path":"/tmp/x.pdf"}`)},
+			[]byte(`{"source_type":"paper","source_id":"2501.00001","pdf_path":"/tmp/x.pdf"}`)},
 		{"GET_extractions_by_id", http.MethodGet, "/api/extractions/ext-1", nil},
 	}
 
@@ -115,7 +115,7 @@ func TestExtractionRouter_RejectsMissingToken(t *testing.T) {
 		body   []byte
 	}{
 		{"POST_no_token", http.MethodPost, "/api/extractions",
-			[]byte(`{"source_type":"arxiv","source_id":"2501.00001","pdf_path":"/tmp/x.pdf"}`)},
+			[]byte(`{"source_type":"paper","source_id":"2501.00001","pdf_path":"/tmp/x.pdf"}`)},
 		{"GET_no_token", http.MethodGet, "/api/extractions/ext-1", nil},
 	}
 
@@ -157,7 +157,7 @@ func TestExtractionRouter_PostReachesController(t *testing.T) {
 	}
 	engine := newExtractionEngine(uc)
 
-	body := bytes.NewBufferString(`{"source_type":"arxiv","source_id":"2501.00001","pdf_path":"/tmp/x.pdf"}`)
+	body := bytes.NewBufferString(`{"source_type":"paper","source_id":"2501.00001","pdf_path":"/tmp/x.pdf"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/extractions", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(middleware.APITokenHeader, testAPIToken)
@@ -173,7 +173,7 @@ func TestExtractionRouter_PostReachesController(t *testing.T) {
 	if len(submits) != 1 {
 		t.Fatalf("expected 1 Submit call, got %d", len(submits))
 	}
-	if submits[0].SourceType != "arxiv" || submits[0].SourceID != "2501.00001" || submits[0].PDFPath != "/tmp/x.pdf" {
+	if submits[0].SourceType != "paper" || submits[0].SourceID != "2501.00001" || submits[0].PDFPath != "/tmp/x.pdf" {
 		t.Fatalf("unexpected Submit payload: %+v", submits[0])
 	}
 }

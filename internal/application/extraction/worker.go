@@ -56,6 +56,9 @@ func (w *Worker) Stop() {
 	<-w.done
 }
 
+// run is the worker goroutine's main loop: block on either a wake signal or
+// ctx cancellation, drain every pending row on each wake, repeat. Closing the
+// done channel on exit is what unblocks Stop().
 func (w *Worker) run(ctx context.Context) {
 	defer close(w.done)
 	w.logger.InfoContext(ctx, "extraction.worker.start")

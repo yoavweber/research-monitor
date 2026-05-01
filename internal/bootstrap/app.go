@@ -124,10 +124,20 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		logger.InfoContext(ctx, "extraction.recovery.flipped", "count", recovered)
 	}
 
-	// One wake is enough: the worker drains the entire queue per signal,
-	// re-checking the DB after every Process. Self-signal kicks the
-	// goroutine into its first drain pass.
-	extractionNotifier.Notify(ctx)
+	// Self-signal once per surviving pending row before the worker goroutine
+	// launches, so anything that arrived (or stalled) while the process was
+	// down is drained without operator intervention. A saturated buffer is
+	// benign — the worker re-checks the DB after every drain pass.
+	pendingIDs, err := extractionRepo.ListPendingIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("extraction list pending on startup: %w", err)
+	}
+	for range pendingIDs {
+		extractionNotifier.Notify(ctx)
+	}
+	if len(pendingIDs) > 0 {
+		logger.InfoContext(ctx, "extraction.startup.pending", "count", len(pendingIDs))
+	}
 
 	extractionWorker.Start(ctx)
 

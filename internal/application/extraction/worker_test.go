@@ -2,7 +2,8 @@ package extraction_test
 
 import (
 	"context"
-	"sync"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,27 +16,6 @@ import (
 	"github.com/yoavweber/research-monitor/backend/tests/testdb"
 )
 
-// movableClock is a thread-safe shared.Clock whose value can be advanced
-// during a test. The worker reads Now() during its peek-time expiry check;
-// tests that need to control whether a row is expired set the clock before
-// sending the wake signal.
-type movableClock struct {
-	mu sync.Mutex
-	t  time.Time
-}
-
-func (c *movableClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.t
-}
-
-func (c *movableClock) set(t time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.t = t
-}
-
 // workerFixture wires the dependencies the Worker needs against a real
 // GORM-over-SQLite repository, the existing fake Extractor, a recording
 // logger, and a ChannelNotifier of caller-chosen buffer capacity. wakeCap
@@ -46,7 +26,7 @@ type workerFixture struct {
 	uc        extraction.UseCase
 	extractor *mocks.ExtractorFake
 	logger    *mocks.RecordingLogger
-	clock     *movableClock
+	clock     *mocks.MovableClock
 	notifier  *appextraction.ChannelNotifier
 	worker    *appextraction.Worker
 }
@@ -57,7 +37,7 @@ func newWorkerFixture(t *testing.T, wakeCap int, jobExpiry time.Duration) *worke
 	repo := extractionrepo.NewRepository(db)
 	extractor := &mocks.ExtractorFake{}
 	logger := &mocks.RecordingLogger{}
-	clock := &movableClock{t: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
+	clock := mocks.NewMovableClock(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
 	notifier := appextraction.NewChannelNotifier(wakeCap)
 
 	uc := appextraction.NewExtractionUseCase(repo, extractor, logger, clock, notifier, 100_000)
@@ -113,7 +93,7 @@ func TestWorker(t *testing.T) {
 			t.Fatalf("Upsert: %v", err)
 		}
 		// Clock is well within the expiry window for the just-created row.
-		fx.clock.set(time.Now().UTC())
+		fx.clock.Set(time.Now().UTC())
 
 		fx.worker.Start(ctx)
 		fx.notifier.Notify(ctx)
@@ -196,16 +176,16 @@ func TestWorker(t *testing.T) {
 		// job_expiry value so operators can reconstruct the expiry decision
 		// from logs alone.
 		msg := row.Failure.Message
-		if !contains(msg, "created_at") || !contains(msg, "job_expiry") {
+		if !strings.Contains(msg, "created_at") || !strings.Contains(msg, "job_expiry") {
 			t.Errorf("failure message = %q, want it to mention both created_at and job_expiry", msg)
 		}
-		if !contains(msg, jobExpiry.String()) {
+		if !strings.Contains(msg, jobExpiry.String()) {
 			t.Errorf("failure message = %q, want it to contain job_expiry value %q", msg, jobExpiry.String())
 		}
 		// The created_at year (2025) is part of the row's timestamp as it
 		// flows through the message via fmt.Sprintf("%s") — checking the
 		// year keeps the assertion stable against minor format changes.
-		if !contains(msg, "2024") {
+		if !strings.Contains(msg, "2024") {
 			t.Errorf("failure message = %q, want it to contain backdated created_at year 2024", msg)
 		}
 	})
@@ -217,7 +197,7 @@ func TestWorker(t *testing.T) {
 		release := make(chan struct{})
 		fx.extractor.BlockUntil = release
 		fx.extractor.Output = extraction.ExtractOutput{Markdown: "# Title\n\nbody"}
-		fx.clock.set(time.Now().UTC())
+		fx.clock.Set(time.Now().UTC())
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -249,7 +229,7 @@ func TestWorker(t *testing.T) {
 			done := make(chan struct{})
 			payload := extraction.RequestPayload{
 				SourceType: "paper",
-				SourceID:   "burst-" + itoa(i),
+				SourceID:   "burst-" + strconv.Itoa(i),
 				PDFPath:    "/tmp/burst.pdf",
 			}
 			var (
@@ -309,7 +289,7 @@ func TestWorker(t *testing.T) {
 		}()
 		fx.extractor.BlockUntil = release
 		fx.extractor.Output = extraction.ExtractOutput{Markdown: "# Title\n\nbody"}
-		fx.clock.set(time.Now().UTC())
+		fx.clock.Set(time.Now().UTC())
 
 		ctx, cancel := context.WithCancel(context.Background())
 
@@ -367,35 +347,4 @@ func TestWorker(t *testing.T) {
 			t.Errorf("failure = %+v, want reason=process_restart", row.Failure)
 		}
 	})
-}
-
-// contains is a tiny stdlib-strings shim local to this file so the test
-// imports stay aligned with the package's own restricted set.
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
-
-// itoa is a small int-to-string helper to keep imports compact.
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	var b []byte
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	for i > 0 {
-		b = append([]byte{byte('0' + i%10)}, b...)
-		i /= 10
-	}
-	if neg {
-		b = append([]byte{'-'}, b...)
-	}
-	return string(b)
 }
