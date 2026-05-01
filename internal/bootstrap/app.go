@@ -86,22 +86,21 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	// the same rows, so the repo is constructed once here and threaded in.
 	paperRepo := paperpersist.NewRepository(db)
 
-	// Extraction composition: extractor → repository → wake channel → use
-	// case → worker. The wake channel is owned here at bootstrap so the
-	// send-side (use case) and receive-side (worker) observe the same buffer.
+	// Extraction composition: extractor → repository → notifier → use case
+	// → worker. The Notifier owns the buffered wake channel so the use case
+	// only sees the publish port and the worker only sees the receive side.
 	// Buffer size comes from EXTRACTION_SIGNAL_BUFFER and bounds the number
 	// of in-flight pickup signals; the worker drains every pending row on
-	// each wake, so a full buffer is harmless — extra signals are dropped
-	// non-blockingly by both Submit and the on-startup self-signal below.
+	// each wake, so a full buffer is harmless — Notify drops the extra.
 	mineruExtractor := mineruadapter.NewMineruExtractor(env.MineruPath, env.MineruTimeout)
 	extractionRepo := extractionrepo.NewRepository(db)
-	wakeCh := make(chan struct{}, env.ExtractionSignalBuffer)
+	extractionNotifier := appextraction.NewChannelNotifier(env.ExtractionSignalBuffer)
 	extractionUseCase := appextraction.NewExtractionUseCase(
 		extractionRepo,
 		mineruExtractor,
 		logger,
 		shared.SystemClock{},
-		wakeCh,
+		extractionNotifier,
 		env.ExtractionMaxWords,
 	)
 	extractionWorker := appextraction.NewWorker(
@@ -109,7 +108,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		extractionUseCase,
 		logger,
 		shared.SystemClock{},
-		wakeCh,
+		extractionNotifier.C(),
 		env.ExtractionJobExpiry,
 	)
 
@@ -126,12 +125,9 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	}
 
 	// One wake is enough: the worker drains the entire queue per signal,
-	// re-checking the DB after every Process. A buffered self-signal kicks
-	// the goroutine into its first drain pass without blocking startup.
-	select {
-	case wakeCh <- struct{}{}:
-	default:
-	}
+	// re-checking the DB after every Process. Self-signal kicks the
+	// goroutine into its first drain pass.
+	extractionNotifier.Notify(ctx)
 
 	extractionWorker.Start(ctx)
 

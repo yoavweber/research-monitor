@@ -20,7 +20,7 @@ type extractionUseCase struct {
 	extractor extraction.Extractor
 	logger    shared.Logger
 	clock     shared.Clock
-	wakeCh    chan<- struct{}
+	notifier  extraction.Notifier
 	maxWords  int
 }
 
@@ -29,7 +29,7 @@ func NewExtractionUseCase(
 	extractor extraction.Extractor,
 	logger shared.Logger,
 	clock shared.Clock,
-	wakeCh chan<- struct{},
+	notifier extraction.Notifier,
 	maxWords int,
 ) extraction.UseCase {
 	return &extractionUseCase{
@@ -37,7 +37,7 @@ func NewExtractionUseCase(
 		extractor: extractor,
 		logger:    logger,
 		clock:     clock,
-		wakeCh:    wakeCh,
+		notifier:  notifier,
 		maxWords:  maxWords,
 	}
 }
@@ -67,11 +67,7 @@ func (u *extractionUseCase) Submit(ctx context.Context, payload extraction.Reque
 		)
 	}
 
-	// Non-blocking — a full buffer means a pickup is already pending.
-	select {
-	case u.wakeCh <- struct{}{}:
-	default:
-	}
+	u.notifier.Notify(ctx)
 
 	return extraction.SubmitResult{ID: id, Status: extraction.JobStatusPending}, nil
 }

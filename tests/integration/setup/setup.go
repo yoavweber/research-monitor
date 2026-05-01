@@ -204,13 +204,13 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		}
 
 		extractionRepo = extractionrepo.NewRepository(db)
-		wakeCh := make(chan struct{}, signalBuffer)
+		notifier := appextraction.NewChannelNotifier(signalBuffer)
 		extractionUseCase = appextraction.NewExtractionUseCase(
 			extractionRepo,
 			o.Extractor,
 			logger,
 			clock,
-			wakeCh,
+			notifier,
 			maxWords,
 		)
 		extractionWorker = appextraction.NewWorker(
@@ -218,7 +218,7 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 			extractionUseCase,
 			logger,
 			clock,
-			wakeCh,
+			notifier.C(),
 			jobExpiry,
 		)
 		deps.Extraction = route.ExtractionConfig{

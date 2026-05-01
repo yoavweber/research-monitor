@@ -38,7 +38,8 @@ func (c *movableClock) set(t time.Time) {
 
 // workerFixture wires the dependencies the Worker needs against a real
 // GORM-over-SQLite repository, the existing fake Extractor, a recording
-// logger, and a buffered wake channel of caller-chosen capacity.
+// logger, and a ChannelNotifier of caller-chosen buffer capacity. wakeCap
+// must be ≥1 so each test's first Notify after Start always lands.
 type workerFixture struct {
 	db        *gorm.DB
 	repo      extraction.Repository
@@ -46,7 +47,7 @@ type workerFixture struct {
 	extractor *mocks.ExtractorFake
 	logger    *mocks.RecordingLogger
 	clock     *movableClock
-	wakeCh    chan struct{}
+	notifier  *appextraction.ChannelNotifier
 	worker    *appextraction.Worker
 }
 
@@ -57,10 +58,10 @@ func newWorkerFixture(t *testing.T, wakeCap int, jobExpiry time.Duration) *worke
 	extractor := &mocks.ExtractorFake{}
 	logger := &mocks.RecordingLogger{}
 	clock := &movableClock{t: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
-	wakeCh := make(chan struct{}, wakeCap)
+	notifier := appextraction.NewChannelNotifier(wakeCap)
 
-	uc := appextraction.NewExtractionUseCase(repo, extractor, logger, clock, wakeCh, 100_000)
-	worker := appextraction.NewWorker(repo, uc, logger, clock, wakeCh, jobExpiry)
+	uc := appextraction.NewExtractionUseCase(repo, extractor, logger, clock, notifier, 100_000)
+	worker := appextraction.NewWorker(repo, uc, logger, clock, notifier.C(), jobExpiry)
 
 	return &workerFixture{
 		db:        db,
@@ -69,7 +70,7 @@ func newWorkerFixture(t *testing.T, wakeCap int, jobExpiry time.Duration) *worke
 		extractor: extractor,
 		logger:    logger,
 		clock:     clock,
-		wakeCh:    wakeCh,
+		notifier:  notifier,
 		worker:    worker,
 	}
 }
@@ -115,7 +116,7 @@ func TestWorker(t *testing.T) {
 		fx.clock.set(time.Now().UTC())
 
 		fx.worker.Start(ctx)
-		fx.wakeCh <- struct{}{}
+		fx.notifier.Notify(ctx)
 
 		waitFor(t, func() bool {
 			row, err := fx.repo.FindByID(ctx, id)
@@ -168,7 +169,7 @@ func TestWorker(t *testing.T) {
 		}
 
 		fx.worker.Start(ctx)
-		fx.wakeCh <- struct{}{}
+		fx.notifier.Notify(ctx)
 
 		waitFor(t, func() bool {
 			row, err := fx.repo.FindByID(ctx, id)
@@ -233,7 +234,7 @@ func TestWorker(t *testing.T) {
 		}
 
 		fx.worker.Start(ctx)
-		fx.wakeCh <- struct{}{}
+		fx.notifier.Notify(ctx)
 
 		waitFor(t, func() bool {
 			return len(fx.extractor.RecordedCalls()) == 1
@@ -322,7 +323,7 @@ func TestWorker(t *testing.T) {
 		}
 
 		fx.worker.Start(ctx)
-		fx.wakeCh <- struct{}{}
+		fx.notifier.Notify(ctx)
 
 		waitFor(t, func() bool {
 			return len(fx.extractor.RecordedCalls()) == 1

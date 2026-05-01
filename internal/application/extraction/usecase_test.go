@@ -21,7 +21,7 @@ type fixedClock struct{ t time.Time }
 func (c fixedClock) Now() time.Time { return c.t }
 
 // fixture wires a fresh in-memory repo, a fake extractor, a recording logger,
-// a frozen clock, and a buffered wake channel. Each subtest gets its own
+// a frozen clock, and a real ChannelNotifier. Each subtest gets its own
 // fixture so t.Parallel is safe.
 type fixture struct {
 	uc        extraction.UseCase
@@ -29,7 +29,7 @@ type fixture struct {
 	extractor *mocks.ExtractorFake
 	logger    *mocks.RecordingLogger
 	clock     shared.Clock
-	wakeCh    chan struct{}
+	notifier  *appextraction.ChannelNotifier
 }
 
 func newFixture(t *testing.T, maxWords int) *fixture {
@@ -39,16 +39,16 @@ func newFixture(t *testing.T, maxWords int) *fixture {
 	extractor := &mocks.ExtractorFake{}
 	logger := &mocks.RecordingLogger{}
 	clock := fixedClock{t: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
-	wakeCh := make(chan struct{}, 2)
+	notifier := appextraction.NewChannelNotifier(2)
 
-	uc := appextraction.NewExtractionUseCase(repo, extractor, logger, clock, wakeCh, maxWords)
+	uc := appextraction.NewExtractionUseCase(repo, extractor, logger, clock, notifier, maxWords)
 	return &fixture{
 		uc:        uc,
 		repo:      repo,
 		extractor: extractor,
 		logger:    logger,
 		clock:     clock,
-		wakeCh:    wakeCh,
+		notifier:  notifier,
 	}
 }
 
@@ -89,8 +89,8 @@ func TestSubmit(t *testing.T) {
 		if got.RequestPayload.PDFPath != "/tmp/x.pdf" {
 			t.Errorf("PDFPath = %q, want /tmp/x.pdf", got.RequestPayload.PDFPath)
 		}
-		if len(fx.wakeCh) != 1 {
-			t.Errorf("len(wakeCh) = %d, want 1", len(fx.wakeCh))
+		if got := len(fx.notifier.C()); got != 1 {
+			t.Errorf("pending wake count = %d, want 1", got)
 		}
 	})
 
@@ -104,8 +104,8 @@ func TestSubmit(t *testing.T) {
 		if !errors.Is(err, extraction.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest", err)
 		}
-		if len(fx.wakeCh) != 0 {
-			t.Errorf("wake channel should not have been signalled on validation error")
+		if len(fx.notifier.C()) != 0 {
+			t.Errorf("notifier should not have been signalled on validation error")
 		}
 	})
 
@@ -119,8 +119,8 @@ func TestSubmit(t *testing.T) {
 		if !errors.Is(err, extraction.ErrUnsupportedSourceType) {
 			t.Fatalf("err = %v, want ErrUnsupportedSourceType", err)
 		}
-		if len(fx.wakeCh) != 0 {
-			t.Errorf("wake channel should not have been signalled on validation error")
+		if len(fx.notifier.C()) != 0 {
+			t.Errorf("notifier should not have been signalled on validation error")
 		}
 	})
 
@@ -135,7 +135,7 @@ func TestSubmit(t *testing.T) {
 			t.Fatalf("first Submit: %v", err)
 		}
 		// Drain initial wake signal so we can assert one new signal afterwards.
-		<-fx.wakeCh
+		<-fx.notifier.C()
 		// Push the row through running -> failed so the prior state carries
 		// a failure_reason worth logging.
 		if err := fx.repo.ClaimPending(ctx, first.ID); err != nil {
@@ -172,8 +172,8 @@ func TestSubmit(t *testing.T) {
 		if !secondRow.CreatedAt.After(priorCreatedAt) {
 			t.Errorf("created_at not refreshed: prior=%v new=%v", priorCreatedAt, secondRow.CreatedAt)
 		}
-		if len(fx.wakeCh) != 1 {
-			t.Errorf("len(wakeCh) = %d, want 1 after overwrite Submit", len(fx.wakeCh))
+		if got := len(fx.notifier.C()); got != 1 {
+			t.Errorf("pending wake count = %d, want 1 after overwrite Submit", got)
 		}
 		infos := fx.logger.RecordsAt("Info")
 		var reextract []mocks.LogRecord

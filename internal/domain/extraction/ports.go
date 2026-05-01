@@ -62,8 +62,8 @@ type Repository interface {
 // It is the only translator from extractor errors to FailureReason — the
 // mapping table is centralised here, not in the controller or adapter.
 type UseCase interface {
-	// Submit creates or overwrites the row for payload, sends a non-blocking
-	// wake signal on the worker channel, and returns the id and current status
+	// Submit creates or overwrites the row for payload, publishes a wake
+	// signal through the Notifier, and returns the id and current status
 	// (always JobStatusPending on success). Returns ErrInvalidRequest when any
 	// field of the payload is empty after trimming, and ErrUnsupportedSourceType
 	// when SourceType is non-empty but not exactly "paper". On a re-enqueue
@@ -82,6 +82,18 @@ type UseCase interface {
 	// MarkFailed; the row is left in running for RecoverRunningOnStartup to
 	// flip to failed: process_restart on the next boot.
 	Process(ctx context.Context, row Extraction) error
+}
+
+// Notifier is the wake-signal sink the use case publishes to whenever a row
+// becomes pending. It hides the concurrency mechanic (buffered channel,
+// pubsub, etc.) behind a single non-blocking publish, so Submit reads as a
+// declarative "tell the worker there's work" without referencing channels.
+//
+// Notify is non-blocking by contract: a saturated buffer means a wake is
+// already pending and dropping the extra signal is correct, since the worker
+// drains every pending row per wake. Implementations must never block Submit.
+type Notifier interface {
+	Notify(ctx context.Context)
 }
 
 // Extractor converts a PDF on disk into raw markdown plus a tool-emitted title
