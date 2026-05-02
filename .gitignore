@@ -14,7 +14,8 @@ coverage.html
 
 # Editor
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 *.swp
 
 # OS

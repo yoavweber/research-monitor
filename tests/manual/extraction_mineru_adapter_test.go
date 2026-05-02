@@ -1,6 +1,6 @@
-//go:build mineru
+//go:build manual
 
-package integration_test
+package manual_test
 
 import (
 	"context"
@@ -16,25 +16,22 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/extraction/mineru"
 )
 
-// TestMineruAdapter exercises the real MinerU CLI against the committed DeFi
-// paper fixture. It is opt-in via the `mineru` build tag because the CLI is a
-// heavy external dependency (model weights, multi-minute cold start) that the
-// default `task test` run cannot assume is installed.
+// TestMineruAdapter runs the real MinerU CLI against a sample arXiv paper.
+// It's slow (multi-minute cold start) and gated behind the `manual` build
+// tag, so it only runs when you invoke it by hand.
 //
-// The test deliberately does not call t.Parallel(): MinerU is resource-heavy
-// (CPU, memory, model files on disk) and concurrent invocations conflict.
-//
-// The markdown body is logged unconditionally before any assertion so the
-// operator can inspect what MinerU actually produces. Assertions verify the
-// adapter passes through MinerU's raw output (the normalizer in Task 3.1 is
-// what strips references / images / figure captions; the adapter is a
-// pass-through). Post-normalize behavior is the e2e test's responsibility.
+// Each run overwrites testdata/amm_arbitrage_with_fees.md; the git diff of
+// that file across runs is how we eyeball MinerU drift between versions.
+// Assertions check structural shape only (math, headings, references) —
+// byte-exact output isn't stable enough to assert against.
 func TestMineruAdapter(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	pdfPath := filepath.Join(wd, "testdata", "amm_arbitrage_with_fees.pdf")
+	// Fixture is shared with the integration-tagged e2e test; reference it in
+	// place rather than duplicating the ~860KB PDF in tests/manual/testdata.
+	pdfPath := filepath.Join(wd, "..", "integration", "testdata", "amm_arbitrage_with_fees.pdf")
 	if _, statErr := os.Stat(pdfPath); statErr != nil {
 		// Distinguish "fixture moved" from "MinerU broken" — skip rather than
 		// fail so the operator gets an unambiguous signal.
@@ -62,34 +59,49 @@ func TestMineruAdapter(t *testing.T) {
 		SourceType: "paper",
 		SourceID:   "amm-arbitrage-fees",
 	})
-
-	// Log the markdown BEFORE any assertion so the operator sees the output
-	// even when assertions fail. This is the headline observable for Task 2.3.
-	t.Logf("=== MinerU Markdown Output ===\n%s\n=== End Output ===", output.Markdown)
-
 	if err != nil {
 		t.Fatalf("MinerU adapter Extract returned error: %v (markdown length=%d)", err, len(output.Markdown))
 	}
+
+	// Persist the markdown beside the PDF fixture so PR diffs surface MinerU
+	// output drift. Overwrite on every run; the operator commits intentional
+	// shifts. MkdirAll handles a fresh checkout where testdata/ has not been
+	// created yet.
+	outputDir := filepath.Join(wd, "testdata")
+	if mkErr := os.MkdirAll(outputDir, 0o755); mkErr != nil {
+		t.Fatalf("create %s: %v", outputDir, mkErr)
+	}
+	outputPath := filepath.Join(outputDir, "amm_arbitrage_with_fees.md")
+	if writeErr := os.WriteFile(outputPath, []byte(output.Markdown), 0o644); writeErr != nil {
+		t.Fatalf("write markdown to %s: %v", outputPath, writeErr)
+	}
+	t.Logf("wrote markdown to %s (length=%d)", outputPath, len(output.Markdown))
 
 	// Adapter-level assertions: MinerU emits the artifacts the design's
 	// normalizer rules need to operate on. Each assertion uses t.Errorf so a
 	// single run surfaces every gap. Sample-verified against the AMM paper
 	// fixture in Task 2.3; figure-caption / reference-section assertions live
 	// in the e2e test (Task 5.2) where the normalized body is observable.
-	if output.Markdown == "" {
+	body, readErr := os.ReadFile(outputPath)
+	if readErr != nil {
+		t.Fatalf("read back %s: %v", outputPath, readErr)
+	}
+	markdown := string(body)
+
+	if markdown == "" {
 		t.Errorf("expected non-empty markdown body, got empty string")
 	}
 
 	mathPattern := regexp.MustCompile(`\$\$[^$]+\$\$|\$[^$]+\$`)
-	if !mathPattern.MatchString(output.Markdown) {
+	if !mathPattern.MatchString(markdown) {
 		t.Errorf("expected at least one $...$ inline or $$...$$ display math span, found none")
 	}
 
-	if !strings.Contains(output.Markdown, "# ") {
+	if !strings.Contains(markdown, "# ") {
 		t.Errorf("expected at least one '# ' level-1 heading marker, found none")
 	}
 
-	if !regexp.MustCompile(`(?im)^#+\s*(references|bibliography|works cited)\s*$`).MatchString(output.Markdown) {
+	if !regexp.MustCompile(`(?im)^#+\s*(references|bibliography|works cited)\s*$`).MatchString(markdown) {
 		t.Errorf("expected a references/bibliography/works-cited heading for the normalizer to truncate")
 	}
 }
