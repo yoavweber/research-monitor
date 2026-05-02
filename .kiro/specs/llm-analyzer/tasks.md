@@ -55,7 +55,7 @@
   - _Boundary: infrastructure/persistence/analyzer_
   - _Depends: 2.1_
 
-- [ ] 2.4 (P) Implement the fake LLM provider keyed by prompt version
+- [x] 2.4 (P) Implement the fake LLM provider keyed by prompt version
   - Implement the shared LLMClient port at infrastructure/llm/fake; switch on the request's prompt version to return canned text for short.v1 and long.v1 and a valid thesis envelope for thesis.v1; default to a documented fixed string for unknown versions; always return a stable model identifier such as "fake".
   - Add a unit test that runs each prompt-version branch through the application's envelope parser to confirm the thesis canned output parses cleanly, the canned model identifier is stable, and the same prompt version always returns the same output.
   - Done when the unit test passes and no branch performs network I/O.
