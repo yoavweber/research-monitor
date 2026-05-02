@@ -1,7 +1,6 @@
 // Package analyzer is the GORM-backed persistence adapter for
-// analyzer.Repository. It owns the on-disk shape of an analyses row and the
-// ToDomain / FromDomain conversion that keeps the domain package free of
-// GORM types.
+// analyzer.Repository. From/ToDomain keep GORM types out of the domain
+// package.
 package analyzer
 
 import (
@@ -10,9 +9,6 @@ import (
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 )
 
-// Analysis is the on-disk row shape. Identity is ExtractionID — the same
-// string the extraction's persisted UUID uses — and there is no separate id
-// column. The upsert contract guarantees one row per ExtractionID.
 type Analysis struct {
 	ExtractionID         string    `gorm:"column:extraction_id;type:text;primaryKey"`
 	ShortSummary         string    `gorm:"column:short_summary;type:text;not null;default:''"`
@@ -25,10 +21,8 @@ type Analysis struct {
 	UpdatedAt            time.Time `gorm:"column:updated_at;not null"`
 }
 
-// TableName pins the GORM table name so it stays stable across package renames.
 func (Analysis) TableName() string { return "analyses" }
 
-// FromDomain converts a domain Analysis into the persistence row.
 func FromDomain(a domain.Analysis) Analysis {
 	return Analysis{
 		ExtractionID:         a.ExtractionID,
@@ -43,7 +37,6 @@ func FromDomain(a domain.Analysis) Analysis {
 	}
 }
 
-// ToDomain rehydrates a persistence row into a domain Analysis.
 func (m Analysis) ToDomain() domain.Analysis {
 	return domain.Analysis{
 		ExtractionID:         m.ExtractionID,

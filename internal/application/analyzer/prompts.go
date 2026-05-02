@@ -1,20 +1,11 @@
 package analyzer
 
-// Prompt-version constants. Each is the value sent in shared.LLMRequest.PromptVersion
-// for one of the three calls; bumping a version forces the fake (and any
-// future real adapter) to opt-in to the new prompt's contract. The composite
-// version is persisted on every Analysis row so downstream consumers can
-// trace which prompt set produced a given result.
 const (
 	PromptVersionShort     = "analyzer.short.v1"
 	PromptVersionLong      = "analyzer.long.v1"
 	PromptVersionThesis    = "analyzer.thesis.v1"
 	PromptVersionComposite = "short.v1+long.v1+thesis.v1"
 )
-
-// Prompt strings. Kept as package-level constants so they are immutable and
-// trivially auditable. Each prompt is independent — short and long produce
-// free text; thesis produces the strict JSON envelope parsed by parse.go.
 
 const promptShortSystem = `You are a research assistant. Produce a short summary of the paper below.
 Constraints:

@@ -1,8 +1,6 @@
-// Package analyzer is the HTTP controller for the /api/analyses endpoints.
-// It delegates to analyzer.UseCase and never performs status mapping itself
-// — the ErrorEnvelope middleware translates the wrapped *shared.HTTPError
-// sentinels declared in domain/analyzer onto the wire, including the
-// machine-readable details.reason discriminator for the two 502 modes.
+// Package analyzer is the HTTP controller for /api/analyses. Status
+// mapping is delegated to ErrorEnvelope middleware via the typed
+// HTTPError sentinels in domain/analyzer.
 package analyzer
 
 import (
@@ -15,20 +13,15 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 )
 
-// Controller is the HTTP handler for the analyzer endpoints.
 type Controller struct {
 	useCase domain.UseCase
 }
 
-// NewController wires the controller to its use case.
 func NewController(uc domain.UseCase) *Controller {
 	return &Controller{useCase: uc}
 }
 
-// Submit handles POST /api/analyses. Bind failures (missing or empty
-// extraction_id, malformed JSON) wrap ErrInvalidRequest so ErrorEnvelope
-// renders the 400; every other error is forwarded as-is for the middleware
-// to translate.
+// Submit handles POST /api/analyses.
 //
 // @Summary      Submit an analysis
 // @Tags         Analyses
@@ -59,8 +52,7 @@ func (ctrl *Controller) Submit(c *gin.Context) {
 	c.JSON(http.StatusOK, common.Data(ToAnalysisResponse(*a)))
 }
 
-// Get handles GET /api/analyses/:extraction_id. Read-only retrieval; never
-// invokes the LLM.
+// Get handles GET /api/analyses/:extraction_id.
 //
 // @Summary      Get an analysis by extraction id
 // @Tags         Analyses

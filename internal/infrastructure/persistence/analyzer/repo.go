@@ -11,24 +11,19 @@ import (
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 )
 
-// repository is the GORM-backed analyzer.Repository implementation. It is
-// unexported so callers depend on the domain port; only NewRepository is
-// public and it returns the interface, not the struct.
 type repository struct{ db *gorm.DB }
 
 // NewRepository builds an analyzer.Repository over the given GORM handle.
 //
-// The handle MUST be opened with gorm.Config{TranslateError: true} so that
-// driver-level unique-constraint violations surface as gorm.ErrDuplicatedKey
-// — the upsert path's conflict branch depends on this.
+// The handle MUST be opened with gorm.Config{TranslateError: true} so
+// driver-level unique-constraint violations surface as
+// gorm.ErrDuplicatedKey — the upsert's conflict branch depends on this.
 func NewRepository(db *gorm.DB) domain.Repository {
 	return &repository{db: db}
 }
 
-// Upsert inserts the row, or — on a primary-key conflict — overwrites the
-// existing row's content while preserving its CreatedAt. Mirrors the
-// extraction repository's pattern (transaction + duplicated-key catch +
-// explicit UPDATE via map[string]any so zero-values land). No
+// Upsert mirrors the extraction repo's pattern: insert, catch
+// duplicated-key, then UPDATE via map[string]any so zero-values land. No
 // clause.OnConflict — the project precedent is the manual path.
 func (r *repository) Upsert(ctx context.Context, a domain.Analysis) (domain.Analysis, error) {
 	row := FromDomain(a)
@@ -43,9 +38,6 @@ func (r *repository) Upsert(ctx context.Context, a domain.Analysis) (domain.Anal
 	}
 }
 
-// overwriteOnConflict reads the existing row's CreatedAt and atomically
-// rewrites the content fields plus UpdatedAt inside a single transaction so
-// concurrent reruns converge on exactly one row per ExtractionID.
 func (r *repository) overwriteOnConflict(ctx context.Context, a domain.Analysis) (domain.Analysis, error) {
 	var (
 		preservedCreated time.Time
@@ -62,9 +54,8 @@ func (r *repository) overwriteOnConflict(ctx context.Context, a domain.Analysis)
 		}
 		preservedCreated = existing.CreatedAt
 
-		// Updates(map) so explicit zero-values land. The boolean is special:
-		// GORM's Updates skips zero values for struct paths, but maps include
-		// every key, so flag = false is persisted faithfully.
+		// Updates(map) so explicit zero-values (e.g. flag=false) land;
+		// Updates(struct) would skip them.
 		return tx.Model(&Analysis{}).
 			Where("extraction_id = ?", a.ExtractionID).
 			Updates(map[string]any{
@@ -86,8 +77,6 @@ func (r *repository) overwriteOnConflict(ctx context.Context, a domain.Analysis)
 	return a, nil
 }
 
-// FindByID returns the row keyed by ExtractionID, or ErrAnalysisNotFound.
-// Any other storage failure wraps ErrCatalogueUnavailable.
 func (r *repository) FindByID(ctx context.Context, extractionID string) (*domain.Analysis, error) {
 	var row Analysis
 	err := r.db.WithContext(ctx).

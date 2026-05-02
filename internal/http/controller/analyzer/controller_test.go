@@ -13,39 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
+	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 	analyzerctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/analyzer"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
+	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
 
 func init() {
 	gin.SetMode(gin.TestMode)
-}
-
-// useCaseFake is an inline analyzer.UseCase double scoped to controller
-// tests. AnalyzeFn / GetFn let each case program the response or sentinel
-// the controller will see; defaults panic so unintended calls are loud.
-type useCaseFake struct {
-	AnalyzeFn func(ctx context.Context, id string) (*domain.Analysis, error)
-	GetFn     func(ctx context.Context, id string) (*domain.Analysis, error)
-
-	AnalyzeCalls int
-	GetCalls     int
-}
-
-func (f *useCaseFake) Analyze(ctx context.Context, id string) (*domain.Analysis, error) {
-	f.AnalyzeCalls++
-	if f.AnalyzeFn == nil {
-		panic("Analyze called but no AnalyzeFn programmed")
-	}
-	return f.AnalyzeFn(ctx, id)
-}
-
-func (f *useCaseFake) Get(ctx context.Context, id string) (*domain.Analysis, error) {
-	f.GetCalls++
-	if f.GetFn == nil {
-		panic("Get called but no GetFn programmed")
-	}
-	return f.GetFn(ctx, id)
 }
 
 func newEngine(ctrl *analyzerctrl.Controller) *gin.Engine {
@@ -70,39 +45,37 @@ func sample(t time.Time) *domain.Analysis {
 	}
 }
 
-func decodeData(t *testing.T, body []byte) map[string]any {
+func decodeAnalysis(t *testing.T, body []byte) analyzerctrl.AnalysisResponse {
 	t.Helper()
-	var env map[string]any
+	var env analyzerctrl.AnalysisEnvelope
 	if err := json.Unmarshal(body, &env); err != nil {
 		t.Fatalf("decode body: %v; raw=%s", err, body)
 	}
-	d, ok := env["data"].(map[string]any)
-	if !ok {
-		t.Fatalf("body.data missing or wrong type; raw=%s", body)
-	}
-	return d
+	return env.Data
 }
 
-func decodeError(t *testing.T, body []byte) map[string]any {
+// errorEnvelope is the wire shape decoded from the standard error path.
+// common.Envelope's Error field is unexported; decoding through this typed
+// shape avoids the map[string]any soup the controller test would otherwise
+// drown in for status-code/reason assertions.
+type errorEnvelope struct {
+	Error common.Error `json:"error"`
+}
+
+func decodeError(t *testing.T, body []byte) common.Error {
 	t.Helper()
-	var env map[string]any
+	var env errorEnvelope
 	if err := json.Unmarshal(body, &env); err != nil {
 		t.Fatalf("decode body: %v; raw=%s", err, body)
 	}
-	e, ok := env["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("body.error missing or wrong type; raw=%s", body)
-	}
-	return e
+	return env.Error
 }
-
-// --- success paths --------------------------------------------------------
 
 func TestSubmit_HappyPath_Returns200WithAnalysisShape(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC)
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		AnalyzeFn: func(_ context.Context, id string) (*domain.Analysis, error) {
 			a := sample(now)
 			a.ExtractionID = id
@@ -119,18 +92,18 @@ func TestSubmit_HappyPath_Returns200WithAnalysisShape(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	d := decodeData(t, w.Body.Bytes())
-	if d["extraction_id"] != "ex-1" {
-		t.Errorf("extraction_id = %v", d["extraction_id"])
+	got := decodeAnalysis(t, w.Body.Bytes())
+	if got.ExtractionID != "ex-1" {
+		t.Errorf("extraction_id = %q", got.ExtractionID)
 	}
-	if d["thesis_angle_flag"] != true {
-		t.Errorf("thesis_angle_flag = %v, want true", d["thesis_angle_flag"])
+	if !got.ThesisAngleFlag {
+		t.Errorf("thesis_angle_flag = false, want true")
 	}
-	if d["short_summary"] != "short text" || d["long_summary"] != "long text" {
-		t.Errorf("summary fields = %v / %v", d["short_summary"], d["long_summary"])
+	if got.ShortSummary != "short text" || got.LongSummary != "long text" {
+		t.Errorf("summary fields = %q / %q", got.ShortSummary, got.LongSummary)
 	}
-	if _, ok := d["created_at"].(string); !ok {
-		t.Errorf("created_at not a string: %v", d["created_at"])
+	if got.CreatedAt.IsZero() {
+		t.Errorf("created_at not set")
 	}
 }
 
@@ -138,7 +111,7 @@ func TestGet_HappyPath_Returns200(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC)
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		GetFn: func(_ context.Context, id string) (*domain.Analysis, error) {
 			a := sample(now)
 			a.ExtractionID = id
@@ -154,21 +127,19 @@ func TestGet_HappyPath_Returns200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	d := decodeData(t, w.Body.Bytes())
-	if d["extraction_id"] != "ex-7" {
-		t.Errorf("extraction_id = %v, want ex-7", d["extraction_id"])
+	got := decodeAnalysis(t, w.Body.Bytes())
+	if got.ExtractionID != "ex-7" {
+		t.Errorf("extraction_id = %q, want ex-7", got.ExtractionID)
 	}
 	if fake.GetCalls != 1 {
 		t.Errorf("GetCalls = %d, want 1", fake.GetCalls)
 	}
 }
 
-// --- precondition / error paths -------------------------------------------
-
 func TestSubmit_EmptyExtractionID_Returns400AndDoesNotInvokeUseCase(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{}
+	fake := &mocks.AnalyzerUseCaseFake{}
 	ctrl := analyzerctrl.NewController(fake)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":""}`))
@@ -187,7 +158,7 @@ func TestSubmit_EmptyExtractionID_Returns400AndDoesNotInvokeUseCase(t *testing.T
 func TestSubmit_MalformedJSON_Returns400(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{}
+	fake := &mocks.AnalyzerUseCaseFake{}
 	ctrl := analyzerctrl.NewController(fake)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{not json`))
@@ -203,7 +174,7 @@ func TestSubmit_MalformedJSON_Returns400(t *testing.T) {
 func TestSubmit_ExtractionNotFound_Returns404(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
 			return nil, domain.ErrExtractionNotFound
 		},
@@ -218,20 +189,16 @@ func TestSubmit_ExtractionNotFound_Returns404(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d, want 404; body=%s", w.Code, w.Body.String())
 	}
-	e := decodeError(t, w.Body.Bytes())
-	if details, ok := e["details"].(map[string]any); ok {
-		if details["reason"] != "extraction_not_found" {
-			t.Errorf("details.reason = %v, want extraction_not_found", details["reason"])
-		}
-	} else {
-		t.Errorf("details missing on 404 response: %v", e)
+	got := decodeError(t, w.Body.Bytes())
+	if reason, _ := got.Details["reason"].(string); reason != "extraction_not_found" {
+		t.Errorf("details.reason = %q, want extraction_not_found", reason)
 	}
 }
 
 func TestSubmit_ExtractionNotReady_Returns409(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
 			return nil, domain.ErrExtractionNotReady
 		},
@@ -251,7 +218,7 @@ func TestSubmit_ExtractionNotReady_Returns409(t *testing.T) {
 func TestSubmit_LLMUpstream_Returns502WithReason(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
 			return nil, errors.Join(domain.ErrLLMUpstream, errors.New("transport boom"))
 		},
@@ -266,20 +233,16 @@ func TestSubmit_LLMUpstream_Returns502WithReason(t *testing.T) {
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status=%d, want 502; body=%s", w.Code, w.Body.String())
 	}
-	e := decodeError(t, w.Body.Bytes())
-	details, ok := e["details"].(map[string]any)
-	if !ok {
-		t.Fatalf("details missing on 502: %v", e)
-	}
-	if details["reason"] != "llm_upstream" {
-		t.Errorf("details.reason = %v, want llm_upstream", details["reason"])
+	got := decodeError(t, w.Body.Bytes())
+	if reason, _ := got.Details["reason"].(string); reason != "llm_upstream" {
+		t.Errorf("details.reason = %q, want llm_upstream", reason)
 	}
 }
 
 func TestSubmit_LLMMalformed_Returns502WithReason(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
 			return nil, domain.ErrAnalyzerMalformedResponse
 		},
@@ -294,20 +257,16 @@ func TestSubmit_LLMMalformed_Returns502WithReason(t *testing.T) {
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("status=%d, want 502; body=%s", w.Code, w.Body.String())
 	}
-	e := decodeError(t, w.Body.Bytes())
-	details, ok := e["details"].(map[string]any)
-	if !ok {
-		t.Fatalf("details missing on 502: %v", e)
-	}
-	if details["reason"] != "llm_malformed_response" {
-		t.Errorf("details.reason = %v, want llm_malformed_response", details["reason"])
+	got := decodeError(t, w.Body.Bytes())
+	if reason, _ := got.Details["reason"].(string); reason != "llm_malformed_response" {
+		t.Errorf("details.reason = %q, want llm_malformed_response", reason)
 	}
 }
 
 func TestSubmit_CatalogueUnavailable_Returns500WithoutReason(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
 			return nil, domain.ErrCatalogueUnavailable
 		},
@@ -322,16 +281,16 @@ func TestSubmit_CatalogueUnavailable_Returns500WithoutReason(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status=%d, want 500; body=%s", w.Code, w.Body.String())
 	}
-	e := decodeError(t, w.Body.Bytes())
-	if _, has := e["details"]; has {
-		t.Errorf("500 response should not carry details.reason: %v", e)
+	got := decodeError(t, w.Body.Bytes())
+	if got.Details != nil {
+		t.Errorf("500 response should not carry details: %v", got.Details)
 	}
 }
 
 func TestGet_AnalysisNotFound_Returns404(t *testing.T) {
 	t.Parallel()
 
-	fake := &useCaseFake{
+	fake := &mocks.AnalyzerUseCaseFake{
 		GetFn: func(context.Context, string) (*domain.Analysis, error) {
 			return nil, domain.ErrAnalysisNotFound
 		},
@@ -345,9 +304,8 @@ func TestGet_AnalysisNotFound_Returns404(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d, want 404; body=%s", w.Code, w.Body.String())
 	}
-	e := decodeError(t, w.Body.Bytes())
-	details, ok := e["details"].(map[string]any)
-	if !ok || details["reason"] != "analysis_not_found" {
-		t.Errorf("details.reason = %v, want analysis_not_found", details)
+	got := decodeError(t, w.Body.Bytes())
+	if reason, _ := got.Details["reason"].(string); reason != "analysis_not_found" {
+		t.Errorf("details.reason = %q, want analysis_not_found", reason)
 	}
 }

@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Foundation: cross-cutting infrastructure that the analyzer depends on
+- [x] 1. Foundation: cross-cutting infrastructure that the analyzer depends on
 - [x] 1.1 Extend the shared HTTPError envelope with an optional machine-readable reason
   - Add an optional reason field on the shared HTTPError type and a small constructor helper that sets it without breaking existing call sites.
   - Update the error envelope middleware so that when the unwrapped HTTPError carries a non-empty reason, the rendered JSON envelope exposes it under error.details.reason; when reason is empty, the existing wire shape stays unchanged.
@@ -24,7 +24,7 @@
   - _Requirements: 6.1, 6.3, 7.2_
   - _Boundary: tests/mocks_
 
-- [ ] 2. Core: analyzer domain, persistence, application, and fake provider
+- [x] 2. Core: analyzer domain, persistence, application, and fake provider
 
 - [x] 2.1 Define the analyzer domain package: value type, ports, sentinel errors
   - Define the persisted analysis value type with the fields documented in the design's Domain Model section.
@@ -62,7 +62,7 @@
   - _Requirements: 7.1, 7.2, 7.3_
   - _Boundary: infrastructure/llm/fake_
 
-- [ ] 3. Integration: HTTP surface and bootstrap wiring
+- [x] 3. Integration: HTTP surface and bootstrap wiring
 
 - [x] 3.1 Build the analyzer HTTP controller with Swagger annotations
   - Implement the POST /analyses handler: bind the request body, return 400 on missing or empty extraction_id without invoking the use case, otherwise call the use case and render the persisted analysis under common.Data on success.
@@ -94,7 +94,7 @@
   - _Boundary: internal/bootstrap_
   - _Depends: 1.2, 2.3, 2.4, 3.2_
 
-- [ ] 4. Validation: end-to-end integration test
+- [x] 4. Validation: end-to-end integration test
 
 - [x] 4.1 End-to-end integration test through the full HTTP, use-case, and persistence path
   - Add a new integration test under tests/integration that boots the real bootstrap wiring with the production fake LLM client and a SQLite database created via the project's test-DB helper.

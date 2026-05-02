@@ -31,10 +31,8 @@ type Env struct {
 	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
 	MineruTimeout          time.Duration `mapstructure:"-"`
 
-	// LLMProvider selects which shared.LLMClient implementation bootstrap
-	// constructs. "fake" (default) is the in-process deterministic adapter.
-	// "anthropic" is reserved; bootstrap rejects it at startup until that
-	// adapter ships, so analyzer requests can never silently no-op.
+	// "anthropic" is reserved but rejected at startup until that adapter
+	// ships, so analyzer requests can never silently no-op.
 	LLMProvider string `mapstructure:"LLM_PROVIDER"`
 }
 
@@ -137,13 +135,8 @@ func LoadEnv() (*Env, error) {
 	}
 	env.MineruTimeout = mineruTimeout
 
-	// LLM_PROVIDER selects which shared.LLMClient bootstrap wires. "fake" is
-	// the only provider implemented today; "anthropic" is reserved and refused
-	// at startup so analyzer requests cannot silently no-op against a missing
-	// adapter. Any other value is a misconfiguration.
 	switch env.LLMProvider {
 	case "fake":
-		// supported
 	case "anthropic":
 		return nil, fmt.Errorf("LLM_PROVIDER=anthropic is reserved but not implemented yet; use \"fake\" until the Anthropic adapter ships")
 	default:

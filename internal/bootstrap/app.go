@@ -144,18 +144,13 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 
 	extractionWorker.Start(ctx)
 
-	// Analyzer composition: a LLM provider (selected by LLM_PROVIDER) →
-	// repository → use case. The env loader has already validated the
-	// provider value at startup; only "fake" is implemented today, and
-	// "anthropic" is reserved (and refused at config time) until that
-	// adapter ships, so the switch here is a one-arm match by construction.
+	// LoadEnv validates LLMProvider at startup; this switch is one-arm by
+	// construction. The default arm is a defense against env-validation drift.
 	var llmClient shared.LLMClient
 	switch env.LLMProvider {
 	case "fake":
 		llmClient = llmfake.New()
 	default:
-		// Defensive: env validation should make this unreachable. Kept so a
-		// future provider value never silently no-ops if env validation drifts.
 		return nil, fmt.Errorf("bootstrap: LLM_PROVIDER=%q has no adapter wired", env.LLMProvider)
 	}
 	analyzerRepo := analyzerrepo.NewRepository(db)
