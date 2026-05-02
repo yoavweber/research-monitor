@@ -35,7 +35,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 4.1, 4.2, 5.1, 5.2, 5.4, 5.5, 6.2_
   - _Boundary: domain/analyzer_
 
-- [ ] 2.2 (P) Implement the analyzer use case: prompt orchestration, JSON envelope parsing, fail-fast error mapping
+- [x] 2.2 (P) Implement the analyzer use case: prompt orchestration, JSON envelope parsing, fail-fast error mapping
   - Hold the three prompt strings and prompt-version constants (short.v1, long.v1, thesis.v1) together with the composite prompt-version string persisted on every analysis row.
   - Implement the synchronous orchestrator: load the extraction by id, reject when the extraction is missing or not in done status, run the three LLM completions sequentially, parse and validate the thesis envelope, derive the persisted model from the thesis call's response, and upsert.
   - Implement the JSON-envelope parser that decodes the thesis response into a typed shape and validates that flag is a boolean and rationale is a non-empty string; tolerate extra fields.
