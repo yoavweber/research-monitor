@@ -64,7 +64,7 @@
 
 - [ ] 3. Integration: HTTP surface and bootstrap wiring
 
-- [ ] 3.1 Build the analyzer HTTP controller with Swagger annotations
+- [x] 3.1 Build the analyzer HTTP controller with Swagger annotations
   - Implement the POST /analyses handler: bind the request body, return 400 on missing or empty extraction_id without invoking the use case, otherwise call the use case and render the persisted analysis under common.Data on success.
   - Implement the GET /analyses/:extraction_id handler: forward to the use case's read path and render the persisted analysis under common.Data, never invoking the LLM.
   - Forward every non-400 failure via c.Error so the existing error-envelope middleware translates the wrapped HTTPError; rely on the new reason field to disambiguate the two 502 modes.

@@ -72,3 +72,12 @@ var ErrCatalogueUnavailable = shared.NewHTTPError(
 	"analysis storage unavailable",
 	nil,
 )
+
+// ErrInvalidRequest wraps a malformed or missing-field request body so the
+// HTTP layer can c.Error(err) and let ErrorEnvelope render the standard 400
+// without a controller-local response path. Maps to HTTP 400.
+var ErrInvalidRequest = shared.NewHTTPError(
+	http.StatusBadRequest,
+	"invalid analyzer request",
+	nil,
+)
