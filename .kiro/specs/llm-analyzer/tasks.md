@@ -17,7 +17,7 @@
   - _Requirements: 7.1, 7.4_
   - _Boundary: bootstrap.env_
 
-- [ ] 1.3 Add a hand-written LLM client double for use-case tests
+- [x] 1.3 Add a hand-written LLM client double for use-case tests
   - Place the double under the project's tests/mocks/ directory next to existing port doubles, following the project's hand-written-fakes-only convention.
   - Make per-call behavior programmable so a single test can script the short, long, and thesis call outcomes independently — including transport errors and arbitrary response text for malformed-envelope tests.
   - Done when the double can be constructed in a test, accept a sequence of canned responses, and be asserted against (call count, observed prompt versions).
