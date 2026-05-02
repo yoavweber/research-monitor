@@ -32,3 +32,43 @@ func TestErrBadStatus_WrappingIsIdentifiable(t *testing.T) {
 		t.Fatalf("wrapped.Error() = %q, want it to contain %q", wrapped.Error(), "status=500")
 	}
 }
+
+func TestHTTPError_NewHTTPError_HasEmptyReasonByDefault(t *testing.T) {
+	t.Parallel()
+
+	he := shared.NewHTTPError(502, "upstream failed", nil)
+
+	if he.Reason != "" {
+		t.Fatalf("default Reason = %q, want empty string", he.Reason)
+	}
+}
+
+func TestHTTPError_WithReason_SetsReasonAndReturnsSameValue(t *testing.T) {
+	t.Parallel()
+
+	he := shared.NewHTTPError(502, "upstream failed", nil).WithReason("llm_upstream")
+
+	if he.Reason != "llm_upstream" {
+		t.Fatalf("Reason after WithReason = %q, want %q", he.Reason, "llm_upstream")
+	}
+	if he.Code != 502 || he.Message != "upstream failed" {
+		t.Fatalf("WithReason mutated other fields: code=%d message=%q", he.Code, he.Message)
+	}
+}
+
+func TestHTTPError_AsHTTPError_PreservesReasonThroughWrap(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("boom")
+	he := shared.NewHTTPError(502, "upstream failed", cause).WithReason("llm_upstream")
+
+	wrapped := fmt.Errorf("usecase: %w", he)
+
+	got := shared.AsHTTPError(wrapped)
+	if got == nil {
+		t.Fatal("AsHTTPError returned nil for a wrapped *HTTPError")
+	}
+	if got.Reason != "llm_upstream" {
+		t.Fatalf("preserved Reason = %q, want %q", got.Reason, "llm_upstream")
+	}
+}

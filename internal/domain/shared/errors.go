@@ -6,11 +6,15 @@ import (
 )
 
 // HTTPError wraps a domain error with an HTTP status code and a user-safe message.
-// Middleware in interface/http/middleware/error_envelope.go translates this to the
-// standard response envelope.
+// Middleware in internal/http/middleware/error_envelope.go translates this to the
+// standard response envelope. Reason is an optional machine-readable discriminator
+// that surfaces under error.details.reason on the wire when non-empty; it lets
+// callers tell apart sentinels that share the same HTTP code (e.g. two distinct
+// 502 modes) without parsing the human-readable Message.
 type HTTPError struct {
 	Code    int
 	Message string
+	Reason  string
 	Err     error
 }
 
@@ -22,6 +26,13 @@ func (e *HTTPError) Error() string {
 }
 
 func (e *HTTPError) Unwrap() error { return e.Err }
+
+// WithReason sets the machine-readable discriminator and returns the same
+// pointer so call sites can chain it onto NewHTTPError.
+func (e *HTTPError) WithReason(reason string) *HTTPError {
+	e.Reason = reason
+	return e
+}
 
 func NewHTTPError(code int, message string, err error) *HTTPError {
 	return &HTTPError{Code: code, Message: message, Err: err}
