@@ -1,6 +1,6 @@
-//go:build mineru
+//go:build manual
 
-package integration_test
+package manual_test
 
 import (
 	"bytes"
@@ -20,12 +20,12 @@ import (
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 )
 
-// e2eExtractionWire mirrors the controller's ExtractionStatusResponse. Defined
-// inline (rather than imported) so a wire-contract drift fails this test
-// loudly even when the hermetic suite is not part of the same build. Pointer
-// metadata captures the omitempty contract for pending / running / failed
-// rows (R2.4).
-type e2eExtractionWire struct {
+// extractionStatusWire mirrors the controller's ExtractionStatusResponse.
+// Defined inline (rather than imported) so a wire-contract drift fails this
+// test loudly even when the hermetic suite is not part of the same build.
+// Pointer metadata captures the omitempty contract for pending / running /
+// failed rows (R2.4).
+type extractionStatusWire struct {
 	ID         string `json:"id"`
 	SourceType string `json:"source_type"`
 	SourceID   string `json:"source_id"`
@@ -42,27 +42,28 @@ type e2eExtractionWire struct {
 	FailureMessage string `json:"failure_message,omitempty"`
 }
 
-// TestMineruE2E exercises the full extraction stack — controller, use case,
-// worker, repository, and the real MinerU adapter — against the committed
-// AMM-arbitrage paper fixture. Opt-in via the `mineru` build tag for the
-// same reason as the adapter test (Task 2.2): MinerU is a heavy external
-// dependency (model weights, multi-minute cold start) the default `task test`
-// run cannot assume is installed.
+// TestExtraction_RealMineru is the only test that runs real MinerU output
+// through the real pipeline. The hermetic suite uses a fake extractor
+// (misses real-MinerU quirks); the adapter test skips the pipeline (misses
+// normalizer/worker integration). This catches bugs that only surface when
+// both halves are real — e.g. Unicode in titles the fake never emits, or
+// whitespace shapes the normalizer chokes on.
 //
-// No t.Parallel(): MinerU is resource-heavy (CPU, memory, GPU/CPU model
-// files) and concurrent invocations conflict on disk + compute.
+// Opt-in via the `manual` build tag: cold-start model loading takes minutes,
+// so the default `task test` cannot assume MinerU is installed. No
+// t.Parallel() — concurrent MinerU invocations conflict on disk + compute.
+// body_markdown is logged before assertions so failures stay auditable.
 //
-// The final body_markdown is logged BEFORE any assertion so the operator can
-// audit what the full pipeline (adapter -> normalizer -> persistence) actually
-// produced even when assertions fail. Per the design's Testing Strategy:
-// initial assertions are expected to fail and serve as the verification gate
-// — ratchet assertions or update the normalizer until both sides agree.
-func TestMineruE2E(t *testing.T) {
+// TODO: swap the AMM-arbitrage fixture for a smaller PDF so this is cheap
+// enough to promote out of `manual` into the regular integration tier.
+func TestExtraction_RealMineru(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	pdfPath := filepath.Join(wd, "testdata", "amm_arbitrage_with_fees.pdf")
+	// Fixture is shared with the adapter test in this directory; reference it
+	// in tests/integration/testdata rather than duplicating the PDF.
+	pdfPath := filepath.Join(wd, "..", "integration", "testdata", "amm_arbitrage_with_fees.pdf")
 	if _, statErr := os.Stat(pdfPath); statErr != nil {
 		// Distinguish "fixture moved" from "MinerU broken" — skip rather than
 		// fail so the operator gets an unambiguous signal.
@@ -106,7 +107,7 @@ func TestMineruE2E(t *testing.T) {
 		t.Fatalf("submit status = %d want 202; body=%s", resp.StatusCode, string(raw))
 	}
 	var submitEnvelope struct {
-		Data e2eExtractionWire `json:"data"`
+		Data extractionStatusWire `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&submitEnvelope); err != nil {
 		resp.Body.Close()
@@ -122,12 +123,19 @@ func TestMineruE2E(t *testing.T) {
 	// deadline. We treat both `done` and `failed` as terminal so a failed
 	// run still surfaces its body_markdown via the assertion phase rather
 	// than hanging until timeout.
+	//
+	// Each iteration emits one `level=INFO msg=http method=GET
+	// path=/api/extractions/<id> ...` line via the test server's request
+	// logger — that stream of repeated GETs in the output IS this loop.
+	// It's the only liveness signal while MinerU runs; the t.Logf below
+	// adds an explicit elapsed/status heartbeat for the operator.
 	pollCtx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 
-	var final e2eExtractionWire
+	var final extractionStatusWire
 	final.Status = submitted.Status
-	deadline := time.Now().Add(callTimeout)
+	pollStart := time.Now()
+	deadline := pollStart.Add(callTimeout)
 	for {
 		getReq, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, env.Server.URL+"/api/extractions/"+submitted.ID, nil)
 		getReq.Header.Set(middleware.APITokenHeader, setup.TestToken)
@@ -141,7 +149,7 @@ func TestMineruE2E(t *testing.T) {
 			t.Fatalf("poll GET status = %d want 200; body=%s", getResp.StatusCode, string(raw))
 		}
 		var envelope struct {
-			Data e2eExtractionWire `json:"data"`
+			Data extractionStatusWire `json:"data"`
 		}
 		if err := json.NewDecoder(getResp.Body).Decode(&envelope); err != nil {
 			getResp.Body.Close()
@@ -157,6 +165,10 @@ func TestMineruE2E(t *testing.T) {
 			t.Fatalf("timeout after %v waiting for terminal status; last observed: status=%q id=%s failure_reason=%q failure_message=%q",
 				callTimeout, final.Status, submitted.ID, final.FailureReason, final.FailureMessage)
 		}
+		// Test-only heartbeat: production logs nothing while MinerU runs, so
+		// without this an operator can't tell a stuck adapter from a busy
+		// one. Cheap (one line per 2s) and scoped to this manual test.
+		t.Logf("polling: status=%s elapsed=%s id=%s", final.Status, time.Since(pollStart).Round(time.Second), submitted.ID)
 		time.Sleep(2 * time.Second)
 	}
 
