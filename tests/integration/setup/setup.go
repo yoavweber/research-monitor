@@ -10,16 +10,21 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/yoavweber/research-monitor/backend/internal/application"
+	appanalyzer "github.com/yoavweber/research-monitor/backend/internal/application/analyzer"
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
+	analyzerdomain "github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
+	llmfake "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/fake"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
 	persistence "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
+	analyzerrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
 	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	sourcerepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
@@ -72,6 +77,14 @@ type TestEnvOpts struct {
 	// ExtractionSignalBuffer overrides the wake-channel buffer size. Zero
 	// is replaced with 10 to mirror the bootstrap default.
 	ExtractionSignalBuffer int
+
+	// WireAnalyzer toggles the llm-analyzer slice. When true, the harness
+	// constructs the analyzer repository over the shared SQLite DB and the
+	// production fake LLMClient, builds the use case, and registers
+	// /api/analyses on the same /api group. The analyzer reads the
+	// extraction repo for body markdown, so meaningful analyzer tests
+	// should also seed the extractions table directly via TestEnv.DB.
+	WireAnalyzer bool
 }
 
 type TestEnv struct {
@@ -95,6 +108,18 @@ type TestEnv struct {
 	// routes; exposed so tests can drive Submit / Get without HTTP if a
 	// case calls for it (the hermetic suite uses HTTP exclusively).
 	ExtractionUseCase extraction.UseCase
+
+	// AnalyzerRepo is the analyzer.Repository wired by the harness when
+	// Opts.WireAnalyzer is true. Exposed so tests can read persisted state
+	// directly without going through HTTP.
+	AnalyzerRepo analyzerdomain.Repository
+	// AnalyzerUseCase is the wired analyzer use case backing the
+	// /api/analyses routes when Opts.WireAnalyzer is true.
+	AnalyzerUseCase analyzerdomain.UseCase
+	// DB is the shared SQLite handle, exposed so tests can seed dependent
+	// rows (e.g. extractions whose body the analyzer reads) without
+	// re-opening the database.
+	DB *gorm.DB
 
 	Close func()
 }
@@ -236,6 +261,33 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		}
 	}
 
+	// Analyzer wiring is opt-in via TestEnvOpts.WireAnalyzer. The harness
+	// constructs the analyzer repo over the shared DB and the production
+	// fake LLMClient, mirroring bootstrap. The analyzer needs an
+	// extraction repo to read body markdown from, so we lazily build one
+	// here when WireAnalyzer is true and the extraction wiring path above
+	// did not already construct it.
+	var (
+		analyzerRepo    analyzerdomain.Repository
+		analyzerUseCase analyzerdomain.UseCase
+	)
+	if o.WireAnalyzer {
+		extRepoForAnalyzer := extractionRepo
+		if extRepoForAnalyzer == nil {
+			extRepoForAnalyzer = extractionrepo.NewRepository(db)
+		}
+		analyzerRepo = analyzerrepo.NewRepository(db)
+		analyzerUseCase = appanalyzer.NewAnalyzerUseCase(
+			analyzerRepo,
+			extRepoForAnalyzer,
+			llmfake.New(),
+			logger,
+			clock,
+		)
+		deps.Analyzer = route.AnalyzerConfig{UseCase: analyzerUseCase}
+		route.AnalyzerRouter(deps)
+	}
+
 	srv := httptest.NewServer(engine)
 	closeFn := srv.Close
 	if workerStop != nil {
@@ -256,6 +308,9 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		PaperRepo:         repo,
 		ExtractionRepo:    extractionRepo,
 		ExtractionUseCase: extractionUseCase,
+		AnalyzerRepo:      analyzerRepo,
+		AnalyzerUseCase:   analyzerUseCase,
+		DB:                db,
 		Close:             closeFn,
 	}
 }

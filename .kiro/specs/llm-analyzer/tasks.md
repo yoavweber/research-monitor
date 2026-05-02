@@ -96,7 +96,7 @@
 
 - [ ] 4. Validation: end-to-end integration test
 
-- [ ] 4.1 End-to-end integration test through the full HTTP, use-case, and persistence path
+- [x] 4.1 End-to-end integration test through the full HTTP, use-case, and persistence path
   - Add a new integration test under tests/integration that boots the real bootstrap wiring with the production fake LLM client and a SQLite database created via the project's test-DB helper.
   - Cover the success path: seed an extraction with status done, POST /analyses with its id, assert 200 and the documented response shape, assert exactly one row in the analyses table whose contents match the response.
   - Cover the overwrite path: POST /analyses again with the same id, assert 200, assert the row count is still one, assert created_at is unchanged from the first POST, assert updated_at advanced.
