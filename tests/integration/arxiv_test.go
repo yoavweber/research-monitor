@@ -331,85 +331,49 @@ func TestArxivIntegration_EmptyFeed(t *testing.T) {
 	}
 }
 
-// TestArxivIntegration_401_MissingToken covers the "no X-API-Token header"
-// branch of requirement 1.2. Auth must short-circuit before the fetcher is
-// invoked; the assertion on fake.Invocations protects that guarantee.
-func TestArxivIntegration_401_MissingToken(t *testing.T) {
+// security
+// TestArxivIntegration_401 covers requirement 1.2: the APIToken middleware
+// must short-circuit before the fetcher is invoked whether the token is
+// missing or wrong. fake.Invocations protects that guarantee on both branches.
+func TestArxivIntegration_401(t *testing.T) {
 	t.Parallel()
 
-	fake := &mocks.PaperFetcher{Entries: []paper.Entry{}}
-	env := setup.SetupTestEnv(t, setup.TestEnvOpts{
-		ArxivFetcher: fake,
-		ArxivQuery:   arxivQuery(),
-	})
-	defer env.Close()
+	cases := []struct {
+		name  string
+		token string // empty = no header
+	}{
+		{"missing token", ""},
+		{"invalid token", "wrong-token"},
+	}
 
-	resp, err := http.Get(env.Server.URL + "/api/arxiv/fetch")
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	defer resp.Body.Close()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d want 401", resp.StatusCode)
-	}
-	if fake.Invocations != 0 {
-		t.Fatalf("fake.Invocations = %d want 0 (auth must short-circuit)", fake.Invocations)
-	}
-}
+			fake := &mocks.PaperFetcher{Entries: []paper.Entry{}}
+			env := setup.SetupTestEnv(t, setup.TestEnvOpts{
+				ArxivFetcher: fake,
+				ArxivQuery:   arxivQuery(),
+			})
+			t.Cleanup(env.Close)
 
-// TestArxivIntegration_401_InvalidToken covers the "wrong X-API-Token" branch
-// of requirement 1.2. Same safety property as the missing-token case: the
-// fetcher must not be contacted.
-func TestArxivIntegration_401_InvalidToken(t *testing.T) {
-	t.Parallel()
+			req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/arxiv/fetch", nil)
+			if tc.token != "" {
+				req.Header.Set(middleware.APITokenHeader, tc.token)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			defer resp.Body.Close()
 
-	fake := &mocks.PaperFetcher{Entries: []paper.Entry{}}
-	env := setup.SetupTestEnv(t, setup.TestEnvOpts{
-		ArxivFetcher: fake,
-		ArxivQuery:   arxivQuery(),
-	})
-	defer env.Close()
-
-	req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/arxiv/fetch", nil)
-	req.Header.Set(middleware.APITokenHeader, "wrong-token")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d want 401", resp.StatusCode)
-	}
-	if fake.Invocations != 0 {
-		t.Fatalf("fake.Invocations = %d want 0 (auth must short-circuit)", fake.Invocations)
-	}
-}
-
-// assertErrorEnvelope decodes the standard { "error": { "code": N, "message": "..." } }
-// envelope rendered by the ErrorEnvelope middleware from *shared.HTTPError
-// sentinels, and verifies the shape. code arrives as float64 after JSON decode.
-func assertErrorEnvelope(t *testing.T, resp *http.Response, wantCode int) {
-	t.Helper()
-	var body map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	errObj, ok := body["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("body.error missing or wrong type: %#v", body)
-	}
-	gotCode, ok := errObj["code"].(float64)
-	if !ok {
-		t.Fatalf("body.error.code missing or wrong type: %#v", errObj["code"])
-	}
-	if int(gotCode) != wantCode {
-		t.Errorf("body.error.code = %d want %d", int(gotCode), wantCode)
-	}
-	msg, ok := errObj["message"].(string)
-	if !ok || msg == "" {
-		t.Errorf("body.error.message missing or empty: %#v", errObj["message"])
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d want 401", resp.StatusCode)
+			}
+			if fake.Invocations != 0 {
+				t.Fatalf("fake.Invocations = %d want 0 (auth must short-circuit)", fake.Invocations)
+			}
+		})
 	}
 }
 

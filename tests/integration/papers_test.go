@@ -17,20 +17,6 @@ import (
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 )
 
-// doAuthenticatedGet issues a GET against the test server with the canonical
-// X-API-Token. Extracted so each scenario stays focused on its assertions and
-// the auth header is set in exactly one place (mirrors arxiv_test.go style).
-func doAuthenticatedGet(t *testing.T, url string) *http.Response {
-	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	return resp
-}
-
 // seedEntry constructs a fully-populated paper.Entry. Tests that need to seed
 // the real repo via env.PaperRepo.Save call this so the resulting row carries
 // every field the wire DTO advertises — that's the only way the 12-field
@@ -71,6 +57,7 @@ type paperWire struct {
 	AbsURL          string    `json:"abs_url"`
 }
 
+// security
 // TestPapers_401 covers R2.1 (auth on Get) and R3.1 (auth on List): the
 // APIToken middleware MUST short-circuit before the repo is touched whether
 // the token is missing or wrong.
