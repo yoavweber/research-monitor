@@ -389,3 +389,68 @@ func TestLoadEnv_MineruPathEmptyRejected(t *testing.T) {
 		t.Errorf("error %q does not mention MINERU_PATH", err.Error())
 	}
 }
+
+// --- llm provider config block ---------------------------------------------
+//
+// Covers the llm-analyzer spec's Requirement 7.1 (default provider needs no
+// API key) and 7.4 (provider substitutability without code changes). The
+// switch is a single flat env var, default "fake"; "anthropic" is reserved
+// but rejected at startup until the adapter ships.
+
+func TestLoadEnv_LLMProviderDefault(t *testing.T) {
+
+	setRequiredEnv(t)
+
+	env, err := LoadEnv()
+	if err != nil {
+		t.Fatalf("LoadEnv returned error: %v", err)
+	}
+	if env.LLMProvider != "fake" {
+		t.Errorf("LLMProvider = %q, want %q", env.LLMProvider, "fake")
+	}
+}
+
+func TestLoadEnv_LLMProviderExplicitFakeAccepted(t *testing.T) {
+
+	setRequiredEnv(t)
+	t.Setenv("LLM_PROVIDER", "fake")
+
+	env, err := LoadEnv()
+	if err != nil {
+		t.Fatalf("LoadEnv returned error: %v", err)
+	}
+	if env.LLMProvider != "fake" {
+		t.Errorf("LLMProvider = %q, want %q", env.LLMProvider, "fake")
+	}
+}
+
+func TestLoadEnv_LLMProviderUnknownRejected(t *testing.T) {
+
+	setRequiredEnv(t)
+	t.Setenv("LLM_PROVIDER", "openai")
+
+	_, err := LoadEnv()
+	if err == nil {
+		t.Fatal("LoadEnv returned nil error for unknown LLM_PROVIDER")
+	}
+	if !strings.Contains(err.Error(), "LLM_PROVIDER") {
+		t.Errorf("error %q does not mention LLM_PROVIDER", err.Error())
+	}
+}
+
+func TestLoadEnv_LLMProviderAnthropicRejectedAsNotImplemented(t *testing.T) {
+
+	setRequiredEnv(t)
+	t.Setenv("LLM_PROVIDER", "anthropic")
+
+	_, err := LoadEnv()
+	if err == nil {
+		t.Fatal("LoadEnv returned nil error for reserved LLM_PROVIDER=anthropic")
+	}
+	if !strings.Contains(err.Error(), "LLM_PROVIDER") {
+		t.Errorf("error %q does not mention LLM_PROVIDER", err.Error())
+	}
+	if !strings.Contains(err.Error(), "not implemented") {
+		t.Errorf("error %q should mention that the anthropic provider is not implemented yet", err.Error())
+	}
+}

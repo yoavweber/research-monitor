@@ -9,7 +9,7 @@
   - _Requirements: 5.4_
   - _Boundary: shared.HTTPError, middleware.ErrorEnvelope_
 
-- [ ] 1.2 Add the LLM_PROVIDER configuration switch with startup validation
+- [x] 1.2 Add the LLM_PROVIDER configuration switch with startup validation
   - Add a flat top-level field for the LLM provider to the env struct, default to fake, and bind the env var.
   - Reject unknown provider values at startup with a clear error; reserve the anthropic value but reject it for now with an explicit not-implemented-yet message until that adapter ships.
   - Add unit tests that cover: default resolves to fake, unknown values fail startup, the reserved anthropic value fails startup with the not-implemented message.

@@ -30,6 +30,12 @@ type Env struct {
 	MineruPath             string        `mapstructure:"MINERU_PATH"`
 	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
 	MineruTimeout          time.Duration `mapstructure:"-"`
+
+	// LLMProvider selects which shared.LLMClient implementation bootstrap
+	// constructs. "fake" (default) is the in-process deterministic adapter.
+	// "anthropic" is reserved; bootstrap rejects it at startup until that
+	// adapter ships, so analyzer requests can never silently no-op.
+	LLMProvider string `mapstructure:"LLM_PROVIDER"`
 }
 
 func LoadEnv() (*Env, error) {
@@ -51,6 +57,7 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("EXTRACTION_JOB_EXPIRY", "1h")
 	v.SetDefault("MINERU_PATH", "mineru")
 	v.SetDefault("MINERU_TIMEOUT", "10m")
+	v.SetDefault("LLM_PROVIDER", "fake")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
 	// observes it even when no .env file and no default exists. Without this,
@@ -70,6 +77,7 @@ func LoadEnv() (*Env, error) {
 		"EXTRACTION_JOB_EXPIRY",
 		"MINERU_PATH",
 		"MINERU_TIMEOUT",
+		"LLM_PROVIDER",
 	} {
 		_ = v.BindEnv(key)
 	}
@@ -128,6 +136,19 @@ func LoadEnv() (*Env, error) {
 		return nil, err
 	}
 	env.MineruTimeout = mineruTimeout
+
+	// LLM_PROVIDER selects which shared.LLMClient bootstrap wires. "fake" is
+	// the only provider implemented today; "anthropic" is reserved and refused
+	// at startup so analyzer requests cannot silently no-op against a missing
+	// adapter. Any other value is a misconfiguration.
+	switch env.LLMProvider {
+	case "fake":
+		// supported
+	case "anthropic":
+		return nil, fmt.Errorf("LLM_PROVIDER=anthropic is reserved but not implemented yet; use \"fake\" until the Anthropic adapter ships")
+	default:
+		return nil, fmt.Errorf("LLM_PROVIDER must be one of [fake, anthropic] (got %q)", env.LLMProvider)
+	}
 
 	return &env, nil
 }
