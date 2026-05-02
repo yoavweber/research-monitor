@@ -4,6 +4,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
@@ -25,15 +27,26 @@ type PaperConfig struct {
 	Repo paper.Repository
 }
 
+// ExtractionConfig is the feature-scoped sub-bundle for the document-extraction
+// aggregate. Bootstrap assembles it once at startup; ExtractionRouter reads it
+// to register the controller. The Worker handle is exposed here so route-level
+// smoke tests can inspect it; production callers use it for graceful shutdown.
+type ExtractionConfig struct {
+	Repo    extraction.Repository
+	UseCase extraction.UseCase
+	Worker  *appextraction.Worker
+}
+
 // Deps are the shared dependencies passed to every per-resource router.
 // Per-resource routers construct their own repo → usecase → controller chains from these.
 type Deps struct {
-	Group  *gin.RouterGroup
-	DB     *gorm.DB
-	Logger shared.Logger
-	Clock  shared.Clock
-	Arxiv  ArxivConfig
-	Paper  PaperConfig
+	Group      *gin.RouterGroup
+	DB         *gorm.DB
+	Logger     shared.Logger
+	Clock      shared.Clock
+	Arxiv      ArxivConfig
+	Paper      PaperConfig
+	Extraction ExtractionConfig
 }
 
 func Setup(d Deps) {
@@ -41,4 +54,5 @@ func Setup(d Deps) {
 	SourceRouter(d)
 	ArxivRouter(d)
 	PaperRouter(d)
+	ExtractionRouter(d)
 }

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(~/.local/share/pipx/venvs/mineru/bin/pip show *)",
+      "Bash(pipx list *)",
+      "Bash(pipx environment *)",
+      "Bash(sort -k5 -n)",
+      "Bash(mineru -b pipeline --help)",
+      "Bash(git merge *)",
+      "Bash(task --list)",
+      "Bash(task lint *)",
+      "Bash(task build *)",
+      "Bash(task test *)",
+      "Bash(git commit -m ' *)",
+      "Bash(go run *)",
+      "Bash(awk '/^#### `mineruExtractor`/,/^####|^###[^#]/' /Users/yoavweber/Desktop/UbuntuBackup/home/yoav/Documents/Documents/Code/Projects/thesis/backend/.claude/worktrees/document-extraction/.kiro/specs/document-extraction/design.md)",
+      "Bash(git ls-remote *)"
+    ],
+    "additionalDirectories": [
+      "/Users/yoavweber/.cache/huggingface/hub/models--opendatalab--MinerU2.5-Pro-2604-1.2B"
+    ]
+  }
+}

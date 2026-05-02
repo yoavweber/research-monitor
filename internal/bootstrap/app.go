@@ -10,12 +10,15 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 
+	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	arxivinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
+	mineruadapter "github.com/yoavweber/research-monitor/backend/internal/infrastructure/extraction/mineru"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
+	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/http/route"
@@ -26,6 +29,12 @@ type App struct {
 	DB     *gorm.DB
 	Engine *gin.Engine
 	Logger shared.Logger
+
+	// extractionWorker is the long-lived background drainer for pending
+	// extraction rows. Stored on App so Shutdown can call Stop() before the
+	// DB handle closes; never accessed by HTTP handlers (those go through
+	// route.Deps.Extraction.UseCase).
+	extractionWorker *appextraction.Worker
 }
 
 func NewApp(ctx context.Context, env *Env) (*App, error) {
@@ -77,6 +86,61 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	// the same rows, so the repo is constructed once here and threaded in.
 	paperRepo := paperpersist.NewRepository(db)
 
+	// Extraction composition: extractor → repository → notifier → use case
+	// → worker. The Notifier owns the buffered wake channel so the use case
+	// only sees the publish port and the worker only sees the receive side.
+	// Buffer size comes from EXTRACTION_SIGNAL_BUFFER and bounds the number
+	// of in-flight pickup signals; the worker drains every pending row on
+	// each wake, so a full buffer is harmless — Notify drops the extra.
+	mineruExtractor := mineruadapter.NewMineruExtractor(env.MineruPath, env.MineruTimeout)
+	extractionRepo := extractionrepo.NewRepository(db)
+	extractionNotifier := appextraction.NewChannelNotifier(env.ExtractionSignalBuffer)
+	extractionUseCase := appextraction.NewExtractionUseCase(
+		extractionRepo,
+		mineruExtractor,
+		logger,
+		shared.SystemClock{},
+		extractionNotifier,
+		env.ExtractionMaxWords,
+	)
+	extractionWorker := appextraction.NewWorker(
+		extractionRepo,
+		extractionUseCase,
+		logger,
+		shared.SystemClock{},
+		extractionNotifier.C(),
+		env.ExtractionJobExpiry,
+	)
+
+	// Recover running rows from a prior process exit BEFORE the worker
+	// starts and BEFORE the first HTTP request is served. Fail-fast: a
+	// partially-recovered catalogue could re-run an extraction whose state
+	// we lost track of.
+	recovered, err := extractionRepo.RecoverRunningOnStartup(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("extraction recover on startup: %w", err)
+	}
+	if recovered > 0 {
+		logger.InfoContext(ctx, "extraction.recovery.flipped", "count", recovered)
+	}
+
+	// Self-signal once per surviving pending row before the worker goroutine
+	// launches, so anything that arrived (or stalled) while the process was
+	// down is drained without operator intervention. A saturated buffer is
+	// benign — the worker re-checks the DB after every drain pass.
+	pendingIDs, err := extractionRepo.ListPendingIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("extraction list pending on startup: %w", err)
+	}
+	for range pendingIDs {
+		extractionNotifier.Notify(ctx)
+	}
+	if len(pendingIDs) > 0 {
+		logger.InfoContext(ctx, "extraction.startup.pending", "count", len(pendingIDs))
+	}
+
+	extractionWorker.Start(ctx)
+
 	api := engine.Group("/api", middleware.APIToken(env.APIToken))
 	route.Setup(route.Deps{
 		Group:  api,
@@ -88,9 +152,45 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 			Query:   query,
 		},
 		Paper: route.PaperConfig{Repo: paperRepo},
+		Extraction: route.ExtractionConfig{
+			Repo:    extractionRepo,
+			UseCase: extractionUseCase,
+			Worker:  extractionWorker,
+		},
 	})
 
-	return &App{Env: env, DB: db, Engine: engine, Logger: logger}, nil
+	return &App{
+		Env:              env,
+		DB:               db,
+		Engine:           engine,
+		Logger:           logger,
+		extractionWorker: extractionWorker,
+	}, nil
+}
+
+// Shutdown drains the extraction worker and closes the DB connection.
+// Bootstrap callers (cmd/api/main.go) invoke this on SIGTERM / interrupt
+// AFTER cancelling the app context they passed to NewApp; cancelling that
+// context is what signals the worker goroutine to exit. Shutdown blocks on
+// Worker.Stop() until the goroutine returns, then closes the DB so an
+// in-flight Process call observes either a usable connection or its own
+// ctx cancellation — never a half-closed handle.
+//
+// In-flight extractions whose ctx is cancelled here return without writing;
+// those rows stay in `running` and the next process boot's
+// RecoverRunningOnStartup flips them to failed: process_restart.
+func (a *App) Shutdown(ctx context.Context) error {
+	if a.extractionWorker != nil {
+		a.extractionWorker.Stop()
+	}
+	if a.DB != nil {
+		sqlDB, err := a.DB.DB()
+		if err != nil {
+			return fmt.Errorf("get sql.DB: %w", err)
+		}
+		return sqlDB.Close()
+	}
+	return nil
 }
 
 func (a *App) Run(ctx context.Context) error {

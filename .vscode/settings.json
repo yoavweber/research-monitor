@@ -1,0 +1,6 @@
+{
+  "go.testTimeout": "10m",
+  "go.testTags": "manual mineru",
+  "go.buildTags": "manual mineru",
+  "go.testFlags": ["-v"]
+}

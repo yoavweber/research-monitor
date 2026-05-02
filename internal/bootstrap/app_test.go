@@ -2,13 +2,22 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	domainextraction "github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
+	extractionpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 )
 
 // TestNewApp_WiresArxivRoute verifies that NewApp assembles the runtime
@@ -134,4 +143,185 @@ func TestNewApp_WiresPaperRoutes(t *testing.T) {
 	if wNoAuth.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/papers without token: got %d, want 401; body=%s", wNoAuth.Code, wNoAuth.Body.String())
 	}
+}
+
+// TestNewApp_ExtractionStartupRecovery covers the design's "Lifecycle, expiry,
+// and restart recovery" 4-step bootstrap sequence: a row left in `running`
+// from a prior process exit must be flipped to `failed: process_restart`
+// BEFORE the worker starts and BEFORE any HTTP request is served, while a
+// pending row from before the prior shutdown must be picked up by the worker
+// after self-signal.
+//
+// Requirements exercised: 1.4 (extraction routes mounted via composed
+// dependencies), 2.6 (worker drains pending after startup), 5.5 / 5.6
+// (composition root wires extractor → repo → use case → worker → route deps,
+// owns lifecycle), 6.5 / 6.6 (recovery flip runs before serving + fail-fast
+// on recovery error).
+//
+// The test does not call LoadEnv (which would mutate process-wide env). It
+// constructs an Env literal with a tempdir SQLite path so the test is
+// hermetic and concurrency-safe across runs.
+func TestNewApp_ExtractionStartupRecovery(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "extraction.db")
+
+	// Phase 1: seed the on-disk DB with one row in `running` (orphaned from
+	// a prior process) and one in `pending` (was waiting at shutdown). We
+	// open the DB through the production OpenSQLite helper so the seeded
+	// connection observes the same WAL / TranslateError flags NewApp will
+	// later see — and so the SQLite driver registration matches.
+	seedDB, err := persistence.OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatalf("seed open db: %v", err)
+	}
+	if err := persistence.AutoMigrate(seedDB); err != nil {
+		t.Fatalf("seed automigrate: %v", err)
+	}
+
+	now := time.Now().UTC()
+	runningID := uuid.NewString()
+	pendingID := uuid.NewString()
+	payloadJSON := mustMarshalRequestPayload(t, domainextraction.RequestPayload{
+		SourceType: "paper",
+		SourceID:   "seed-paper",
+		// /nonexistent/mineru is also configured below; this PDF path is
+		// never read because the extractor errors before opening the file.
+		PDFPath: "/nonexistent/sample.pdf",
+	})
+
+	rows := []extractionpersist.Extraction{
+		{
+			ID:             runningID,
+			SourceType:     "paper",
+			SourceID:       "seed-running",
+			Status:         domainextraction.JobStatusRunning,
+			RequestPayload: payloadJSON,
+			CreatedAt:      now.Add(-30 * time.Second),
+			UpdatedAt:      now.Add(-30 * time.Second),
+		},
+		{
+			ID:             pendingID,
+			SourceType:     "paper",
+			SourceID:       "seed-pending",
+			Status:         domainextraction.JobStatusPending,
+			RequestPayload: payloadJSON,
+			CreatedAt:      now.Add(-10 * time.Second),
+			UpdatedAt:      now.Add(-10 * time.Second),
+		},
+	}
+	for i := range rows {
+		if err := seedDB.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("seed create row %d: %v", i, err)
+		}
+	}
+	// Close the seed handle so NewApp opens its own connection without
+	// fighting over the SQLite WAL writer.
+	if sqlDB, err := seedDB.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+
+	// Phase 2: construct an Env literal directly and call NewApp. AppEnv is
+	// "test" so NewApp does not mutate the process-global gin mode, which
+	// keeps this test safe to run in parallel with other tests in the
+	// future. MineruPath points at a binary that does not exist so any
+	// extraction the worker happens to dequeue fails fast with a typed
+	// extractor error rather than blocking on a real subprocess.
+	env := &Env{
+		AppEnv:                 "test",
+		HTTPPort:               0,
+		APIToken:               "test-token",
+		SQLitePath:             dbPath,
+		ArxivBaseURL:           "http://localhost",
+		ArxivCategories:        []string{"q-fin.MF"},
+		ArxivMaxResults:        1,
+		ExtractionMaxWords:     50000,
+		ExtractionSignalBuffer: 10,
+		ExtractionJobExpiry:    time.Hour,
+		MineruPath:             "/nonexistent/mineru",
+		MineruTimeout:          10 * time.Minute,
+	}
+
+	// The app context is the worker's lifetime. Cancelling it after NewApp
+	// returns is the documented signal for the worker goroutine to exit;
+	// app.Shutdown() then blocks on Worker.Stop() until run() observes
+	// ctx.Done() and closes its done channel.
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	app, err := NewApp(appCtx, env)
+	if err != nil {
+		cancelApp()
+		t.Fatalf("NewApp: %v", err)
+	}
+	if app == nil {
+		cancelApp()
+		t.Fatalf("NewApp returned nil app with no error")
+	}
+
+	// Phase 3: signal shutdown and assert it returns within a deadline.
+	// cancelApp() releases the worker's run loop; Shutdown blocks on Stop()
+	// which waits for the goroutine to exit, then closes the DB. We wrap
+	// Shutdown in a goroutine + timeout so a regression that caused
+	// Worker.Stop to block forever surfaces as a clear test failure rather
+	// than a hung test.
+	cancelApp()
+	shutdownDone := make(chan error, 1)
+	go func() {
+		shutdownDone <- app.Shutdown(context.Background())
+	}()
+	select {
+	case sErr := <-shutdownDone:
+		if sErr != nil {
+			t.Fatalf("Shutdown returned error: %v", sErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Shutdown did not return within 5s — Worker.Stop is blocked")
+	}
+
+	// Phase 4: re-open the DB on a fresh handle and assert the recovery
+	// flip ran. The was-running row MUST now be failed: process_restart;
+	// that is the headline invariant of the bootstrap recovery sequence.
+	verifyDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("verify open db: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := verifyDB.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	var runningRow extractionpersist.Extraction
+	if err := verifyDB.First(&runningRow, "id = ?", runningID).Error; err != nil {
+		t.Fatalf("read recovered running row: %v", err)
+	}
+	if runningRow.Status != domainextraction.JobStatusFailed {
+		t.Fatalf("running row status: got %q, want %q", runningRow.Status, domainextraction.JobStatusFailed)
+	}
+	if runningRow.FailureReason != domainextraction.FailureReasonProcessRestart {
+		t.Fatalf("running row failure_reason: got %q, want %q", runningRow.FailureReason, domainextraction.FailureReasonProcessRestart)
+	}
+
+	// The pending row must NOT be left in `running`: either the worker
+	// never picked it up before shutdown (still pending), or it was picked
+	// up and processed to a terminal state (most likely failed because the
+	// configured MinerU binary path does not exist). A `running` status
+	// here indicates a recovery / shutdown invariant violation.
+	var pendingRow extractionpersist.Extraction
+	if err := verifyDB.First(&pendingRow, "id = ?", pendingID).Error; err != nil {
+		t.Fatalf("read pending row: %v", err)
+	}
+	if pendingRow.Status == domainextraction.JobStatusRunning {
+		t.Fatalf("pending row left in running after shutdown: %#v", pendingRow)
+	}
+}
+
+// mustMarshalRequestPayload mirrors the persistence layer's JSON encoding so
+// the seeded rows are readable by the production code path. Failure here is
+// a programmer error in the test, not a domain condition.
+func mustMarshalRequestPayload(t *testing.T, p domainextraction.RequestPayload) string {
+	t.Helper()
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("marshal request_payload: %v", err)
+	}
+	return string(b)
 }

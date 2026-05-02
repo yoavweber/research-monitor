@@ -2,7 +2,9 @@ package bootstrap
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -18,6 +20,16 @@ type Env struct {
 	ArxivCategoriesRaw string   `mapstructure:"ARXIV_CATEGORIES"`
 	ArxivCategories    []string `mapstructure:"-"` // populated post-Unmarshal
 	ArxivMaxResults    int      `mapstructure:"ARXIV_MAX_RESULTS"`
+
+	// Durations parse post-Unmarshal so a malformed value fails fast with the
+	// offending env-var name; viper would otherwise silently coerce to zero.
+	ExtractionMaxWords     int           `mapstructure:"EXTRACTION_MAX_WORDS"`
+	ExtractionSignalBuffer int           `mapstructure:"EXTRACTION_SIGNAL_BUFFER"`
+	ExtractionJobExpiryRaw string        `mapstructure:"EXTRACTION_JOB_EXPIRY"`
+	ExtractionJobExpiry    time.Duration `mapstructure:"-"`
+	MineruPath             string        `mapstructure:"MINERU_PATH"`
+	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
+	MineruTimeout          time.Duration `mapstructure:"-"`
 }
 
 func LoadEnv() (*Env, error) {
@@ -34,6 +46,11 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("SQLITE_PATH", "./data/app.db")
 	v.SetDefault("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 	v.SetDefault("ARXIV_BASE_URL", "https://export.arxiv.org/api/query")
+	v.SetDefault("EXTRACTION_MAX_WORDS", 50000)
+	v.SetDefault("EXTRACTION_SIGNAL_BUFFER", 10)
+	v.SetDefault("EXTRACTION_JOB_EXPIRY", "1h")
+	v.SetDefault("MINERU_PATH", "mineru")
+	v.SetDefault("MINERU_TIMEOUT", "10m")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
 	// observes it even when no .env file and no default exists. Without this,
@@ -48,6 +65,11 @@ func LoadEnv() (*Env, error) {
 		"ARXIV_BASE_URL",
 		"ARXIV_CATEGORIES",
 		"ARXIV_MAX_RESULTS",
+		"EXTRACTION_MAX_WORDS",
+		"EXTRACTION_SIGNAL_BUFFER",
+		"EXTRACTION_JOB_EXPIRY",
+		"MINERU_PATH",
+		"MINERU_TIMEOUT",
 	} {
 		_ = v.BindEnv(key)
 	}
@@ -78,7 +100,54 @@ func LoadEnv() (*Env, error) {
 		return nil, fmt.Errorf("ARXIV_MAX_RESULTS must be between 1 and 30000 (got %d)", env.ArxivMaxResults)
 	}
 
+	if err := requirePositiveInt("EXTRACTION_MAX_WORDS", env.ExtractionMaxWords); err != nil {
+		return nil, err
+	}
+	if err := requirePositiveInt("EXTRACTION_SIGNAL_BUFFER", env.ExtractionSignalBuffer); err != nil {
+		return nil, err
+	}
+
+	jobExpiry, err := parsePositiveDuration("EXTRACTION_JOB_EXPIRY", env.ExtractionJobExpiryRaw)
+	if err != nil {
+		return nil, err
+	}
+	env.ExtractionJobExpiry = jobExpiry
+
+	// Viper substitutes the MINERU_PATH default when the env var is unset,
+	// but a literal `MINERU_PATH=` from the operator is a misconfiguration
+	// we want to refuse rather than silently paper over with the default.
+	if rawPath, present := os.LookupEnv("MINERU_PATH"); present && rawPath == "" {
+		return nil, fmt.Errorf("MINERU_PATH is required and must be a non-empty executable name or path")
+	}
+	if strings.TrimSpace(env.MineruPath) == "" {
+		return nil, fmt.Errorf("MINERU_PATH is required and must be a non-empty executable name or path")
+	}
+
+	mineruTimeout, err := parsePositiveDuration("MINERU_TIMEOUT", env.MineruTimeoutRaw)
+	if err != nil {
+		return nil, err
+	}
+	env.MineruTimeout = mineruTimeout
+
 	return &env, nil
+}
+
+func requirePositiveInt(name string, v int) error {
+	if v <= 0 {
+		return fmt.Errorf("%s must be positive (got %d)", name, v)
+	}
+	return nil
+}
+
+func parsePositiveDuration(name, raw string) (time.Duration, error) {
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid Go duration (got %q): %w", name, raw, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration (got %s)", name, d)
+	}
+	return d, nil
 }
 
 func parseCategories(raw string) []string {
