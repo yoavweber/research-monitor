@@ -239,6 +239,7 @@ func TestNewApp_ExtractionStartupRecovery(t *testing.T) {
 		ExtractionJobExpiry:    time.Hour,
 		MineruPath:             "/nonexistent/mineru",
 		MineruTimeout:          10 * time.Minute,
+		LLMProvider:            "fake",
 	}
 
 	// The app context is the worker's lifetime. Cancelling it after NewApp

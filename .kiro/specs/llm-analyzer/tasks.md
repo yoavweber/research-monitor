@@ -84,7 +84,7 @@
   - _Boundary: internal/http/route_
   - _Depends: 3.1_
 
-- [ ] 3.3 Bootstrap wiring: AutoMigrate, provider selection, dependency injection
+- [x] 3.3 Bootstrap wiring: AutoMigrate, provider selection, dependency injection
   - Append the analyzer persistence model to the project's AutoMigrate list so the analyses table is created at startup.
   - Construct the production fake LLM client when the configured provider equals fake; refuse to start with a clear error when the provider equals the reserved anthropic value until that adapter ships.
   - Build the analyzer repository, build the analyzer use case (passing the extraction repository, the LLM client, the logger, and the clock), wire the analyzer use case onto the route Deps struct, and call route setup so the HTTP surface is mounted.

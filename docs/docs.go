@@ -15,6 +15,131 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/analyses": {
+            "post": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analyses"
+                ],
+                "summary": "Submit an analysis",
+                "parameters": [
+                    {
+                        "description": "Analysis request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_analyzer.SubmitAnalysisRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Analysis persisted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_analyzer.AnalysisEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Extraction not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Extraction not in done status",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Analysis storage unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "502": {
+                        "description": "LLM upstream failed or returned malformed response",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/analyses/{extraction_id}": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analyses"
+                ],
+                "summary": "Get an analysis by extraction id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Extraction id",
+                        "name": "extraction_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Analysis found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_analyzer.AnalysisEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Analysis not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Analysis storage unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/arxiv/fetch": {
             "get": {
                 "security": [
@@ -57,6 +182,113 @@ const docTemplate = `{
                     },
                     "504": {
                         "description": "Upstream arXiv unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/extractions": {
+            "post": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Extractions"
+                ],
+                "summary": "Submit an extraction",
+                "parameters": [
+                    {
+                        "description": "Extraction request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_extraction.SubmitExtractionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Extraction enqueued",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_extraction.ExtractionStatusEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Catalogue unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/extractions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Extractions"
+                ],
+                "summary": "Get extraction status by id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Extraction id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Extraction state",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_extraction.ExtractionStatusEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Extraction not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Catalogue unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
                         }
@@ -499,6 +731,57 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_http_controller_analyzer.AnalysisEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_http_controller_analyzer.AnalysisResponse"
+                }
+            }
+        },
+        "internal_http_controller_analyzer.AnalysisResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "extraction_id": {
+                    "type": "string"
+                },
+                "long_summary": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "prompt_version": {
+                    "type": "string"
+                },
+                "short_summary": {
+                    "type": "string"
+                },
+                "thesis_angle_flag": {
+                    "type": "boolean"
+                },
+                "thesis_angle_rationale": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_http_controller_analyzer.SubmitAnalysisRequest": {
+            "type": "object",
+            "required": [
+                "extraction_id"
+            ],
+            "properties": {
+                "extraction_id": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_http_controller_arxiv.EntryResponse": {
             "type": "object",
             "properties": {
@@ -570,6 +853,78 @@ const docTemplate = `{
                     }
                 },
                 "fetched_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_http_controller_extraction.ExtractionStatusEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_http_controller_extraction.ExtractionStatusResponse"
+                }
+            }
+        },
+        "internal_http_controller_extraction.ExtractionStatusResponse": {
+            "type": "object",
+            "properties": {
+                "body_markdown": {
+                    "type": "string"
+                },
+                "failure_message": {
+                    "type": "string"
+                },
+                "failure_reason": {
+                    "description": "Failure branch — populated iff status == failed.",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/internal_http_controller_extraction.MetadataDTO"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "description": "Artifact branch — populated iff status == done. Metadata is a pointer\nso the entire object disappears from JSON when nil.",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_http_controller_extraction.MetadataDTO": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_http_controller_extraction.SubmitExtractionRequest": {
+            "type": "object",
+            "required": [
+                "pdf_path",
+                "source_id",
+                "source_type"
+            ],
+            "properties": {
+                "pdf_path": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "source_type": {
                     "type": "string"
                 }
             }
