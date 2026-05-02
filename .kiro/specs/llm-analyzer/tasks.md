@@ -75,7 +75,7 @@
   - _Boundary: internal/http/controller/analyzer_
   - _Depends: 1.1, 2.2_
 
-- [ ] 3.2 Register the analyzer routes on the authenticated /api group
+- [x] 3.2 Register the analyzer routes on the authenticated /api group
   - Add the analyzer route file alongside existing per-feature route files; register POST /analyses and GET /analyses/:extraction_id on the /api group so they inherit the existing X-API-Token middleware without introducing any new auth surface.
   - Extend the existing route Deps struct with the analyzer use case so the router can construct the controller.
   - Add a route-level test that asserts a request with a missing or wrong token receives the same status the rest of /api uses for unauthenticated requests, and that the analyzer endpoints are reachable when authenticated.

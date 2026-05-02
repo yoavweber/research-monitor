@@ -5,6 +5,7 @@ import (
 	"gorm.io/gorm"
 
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
@@ -37,6 +38,13 @@ type ExtractionConfig struct {
 	Worker  *appextraction.Worker
 }
 
+// AnalyzerConfig is the feature-scoped sub-bundle for the llm-analyzer
+// aggregate. Bootstrap assembles it once at startup; AnalyzerRouter reads it
+// to register the controller. UseCase is the only port the router needs.
+type AnalyzerConfig struct {
+	UseCase analyzer.UseCase
+}
+
 // Deps are the shared dependencies passed to every per-resource router.
 // Per-resource routers construct their own repo → usecase → controller chains from these.
 type Deps struct {
@@ -47,6 +55,7 @@ type Deps struct {
 	Arxiv      ArxivConfig
 	Paper      PaperConfig
 	Extraction ExtractionConfig
+	Analyzer   AnalyzerConfig
 }
 
 func Setup(d Deps) {
@@ -55,4 +64,5 @@ func Setup(d Deps) {
 	ArxivRouter(d)
 	PaperRouter(d)
 	ExtractionRouter(d)
+	AnalyzerRouter(d)
 }
