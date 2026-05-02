@@ -26,7 +26,7 @@
 
 - [ ] 2. Core: analyzer domain, persistence, application, and fake provider
 
-- [ ] 2.1 Define the analyzer domain package: value type, ports, sentinel errors
+- [x] 2.1 Define the analyzer domain package: value type, ports, sentinel errors
   - Define the persisted analysis value type with the fields documented in the design's Domain Model section.
   - Define the inbound use-case port and the outbound repository port with context-first method signatures.
   - Define the sentinel errors (extraction-not-found, extraction-not-ready, llm-upstream, malformed-response, analysis-not-found, catalogue-unavailable) wrapping the shared HTTPError with the codes and reason strings from the design's sentinel map.
