@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	analyzerpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
 	extractionpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	sourcemodel "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
@@ -17,6 +18,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&sourcemodel.Source{},
 		&paperpersist.Paper{},
 		&extractionpersist.Extraction{},
+		&analyzerpersist.Analysis{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}

@@ -45,7 +45,7 @@
   - _Boundary: application/analyzer_
   - _Depends: 2.1, 1.3_
 
-- [ ] 2.3 (P) Implement the analyzer persistence repository with race-safe upsert
+- [x] 2.3 (P) Implement the analyzer persistence repository with race-safe upsert
   - Define the GORM model with a TableName pin, the columns from the design's physical data model, and From/ToDomain conversions that keep GORM types out of the domain package.
   - Implement the repository's Upsert as a transaction that inserts and, on duplicated-key error, performs an explicit UPDATE via map[string]any so zero-values land; preserve created_at and advance updated_at; return the row as persisted. Mirror the precedent established by the extraction repository — do not introduce clause.OnConflict.
   - Implement FindByID that returns the analysis-not-found sentinel for misses and wraps any other error as catalogue-unavailable.
