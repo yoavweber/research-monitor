@@ -11,6 +11,7 @@ import (
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
 
@@ -104,26 +105,24 @@ func doneExtraction(id, body string) *extraction.Extraction {
 type harness struct {
 	uc      domain.UseCase
 	repo    *inMemoryRepo
-	llm     *mocks.LLMClientFake
+	llm     *stub.Client
 	clock   *mocks.MovableClock
 	extract *stubExtractionRepo
 }
 
 func newHarness(extract *stubExtractionRepo) *harness {
 	repo := newInMemoryRepo()
-	llm := &mocks.LLMClientFake{}
+	llm := stub.New()
 	clock := mocks.NewMovableClock(time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC))
 	logger := &mocks.RecordingLogger{}
 	uc := app.NewAnalyzerUseCase(repo, extract, llm, logger, clock)
 	return &harness{uc: uc, repo: repo, llm: llm, clock: clock, extract: extract}
 }
 
-// queueValidThree pushes three results matching the use case's call order:
-// short text, long text, valid thesis envelope.
 func (h *harness) queueValidThree() {
 	h.llm.QueueResponse("short summary text")
 	h.llm.QueueResponse("long summary text body")
-	h.llm.Results = append(h.llm.Results, mocks.LLMResult{
+	h.llm.Results = append(h.llm.Results, stub.Result{
 		Response: &shared.LLMResponse{
 			Text:  `{"flag": true, "rationale": "promising thesis angle"}`,
 			Model: "fake-thesis-model",

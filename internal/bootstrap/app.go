@@ -17,7 +17,7 @@ import (
 	arxivinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
 	mineruadapter "github.com/yoavweber/research-monitor/backend/internal/infrastructure/extraction/mineru"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
-	llmfake "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/fake"
+	llmstub "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	analyzerrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
@@ -149,7 +149,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	var llmClient shared.LLMClient
 	switch env.LLMProvider {
 	case "fake":
-		llmClient = llmfake.New()
+		llmClient = llmstub.New()
 	default:
 		return nil, fmt.Errorf("bootstrap: LLM_PROVIDER=%q has no adapter wired", env.LLMProvider)
 	}

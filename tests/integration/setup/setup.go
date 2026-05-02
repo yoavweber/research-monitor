@@ -21,7 +21,7 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
-	llmfake "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/fake"
+	llmstub "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
 	persistence "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	analyzerrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
@@ -280,7 +280,7 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		analyzerUseCase = appanalyzer.NewAnalyzerUseCase(
 			analyzerRepo,
 			extRepoForAnalyzer,
-			llmfake.New(),
+			llmstub.New(),
 			logger,
 			clock,
 		)
