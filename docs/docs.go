@@ -81,7 +81,7 @@ const docTemplate = `{
                         }
                     },
                     "502": {
-                        "description": "LLM upstream failed or returned malformed response",
+                        "description": "LLM upstream failed",
                         "schema": {
                             "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
                         }

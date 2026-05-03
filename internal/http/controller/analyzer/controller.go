@@ -34,7 +34,7 @@ func NewController(uc domain.UseCase) *Controller {
 // @Failure      404   {object}  common.ErrorEnvelope   "Extraction not found"
 // @Failure      409   {object}  common.ErrorEnvelope   "Extraction not in done status"
 // @Failure      500   {object}  common.ErrorEnvelope   "Analysis storage unavailable"
-// @Failure      502   {object}  common.ErrorEnvelope   "LLM upstream failed or returned malformed response"
+// @Failure      502   {object}  common.ErrorEnvelope   "LLM upstream failed"
 // @Security     APIToken
 // @Router       /analyses [post]
 func (ctrl *Controller) Submit(c *gin.Context) {

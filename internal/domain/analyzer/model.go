@@ -9,6 +9,12 @@ import "time"
 
 // Analysis is keyed by ExtractionID; CreatedAt is preserved across reruns
 // and UpdatedAt advances on each.
+//
+// ThesisAngleFlag and ThesisAngleRationale are placeholder columns: this
+// slice does not run a thesis classifier, the use case fills them with a
+// constant default. They will become real once the thesis-profile follow-up
+// spec defines a classification criterion. The columns ship now so the wire
+// shape doesn't churn when the classifier lands.
 type Analysis struct {
 	ExtractionID         string
 	ShortSummary         string

@@ -18,8 +18,6 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// errorEnvelopeServer wires ErrorEnvelope() and emits whatever error the
-// handler attached via c.Error so the test can inspect the rendered envelope.
 func errorEnvelopeServer(handlerErr error) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.ErrorEnvelope())
@@ -38,71 +36,75 @@ func decodeEnvelope(t *testing.T, body []byte) common.Envelope {
 	return env
 }
 
-func TestErrorEnvelope_HTTPErrorWithoutReason_OmitsDetailsReason(t *testing.T) {
+func TestErrorEnvelope(t *testing.T) {
 	t.Parallel()
 
-	he := shared.NewHTTPError(http.StatusNotFound, "thing not found", nil)
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
+	t.Run("renders an HTTPError without Reason as the existing envelope shape", func(t *testing.T) {
+		t.Parallel()
 
-	errorEnvelopeServer(he).ServeHTTP(w, req)
+		he := shared.NewHTTPError(http.StatusNotFound, "thing not found", nil)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/boom", nil)
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-	env := decodeEnvelope(t, w.Body.Bytes())
-	if env.Error == nil {
-		t.Fatal("envelope.Error is nil")
-	}
-	if env.Error.Code != http.StatusNotFound || env.Error.Message != "thing not found" {
-		t.Fatalf("envelope.Error = %+v, want code=404 message=%q", env.Error, "thing not found")
-	}
-	if _, present := env.Error.Details["reason"]; present {
-		t.Fatalf("envelope.Error.Details.reason must be absent when Reason is empty; got %v", env.Error.Details)
-	}
-}
+		errorEnvelopeServer(he).ServeHTTP(w, req)
 
-func TestErrorEnvelope_HTTPErrorWithReason_SetsDetailsReason(t *testing.T) {
-	t.Parallel()
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
+		}
+		env := decodeEnvelope(t, w.Body.Bytes())
+		if env.Error == nil {
+			t.Fatal("envelope.Error is nil")
+		}
+		if env.Error.Code != http.StatusNotFound || env.Error.Message != "thing not found" {
+			t.Fatalf("envelope.Error = %+v, want code=404 message=%q", env.Error, "thing not found")
+		}
+		if _, present := env.Error.Details["reason"]; present {
+			t.Fatalf("envelope.Error.Details.reason must be absent when Reason is empty; got %v", env.Error.Details)
+		}
+	})
 
-	he := shared.NewHTTPError(http.StatusBadGateway, "llm upstream failed", nil).WithReason("llm_upstream")
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
+	t.Run("surfaces a non-empty Reason under error.details.reason", func(t *testing.T) {
+		t.Parallel()
 
-	errorEnvelopeServer(he).ServeHTTP(w, req)
+		he := shared.NewHTTPError(http.StatusBadGateway, "llm upstream failed", nil).WithReason("llm_upstream")
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/boom", nil)
 
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadGateway)
-	}
-	env := decodeEnvelope(t, w.Body.Bytes())
-	if env.Error == nil {
-		t.Fatal("envelope.Error is nil")
-	}
-	gotReason, ok := env.Error.Details["reason"].(string)
-	if !ok {
-		t.Fatalf("envelope.Error.Details.reason missing or not a string: %v", env.Error.Details)
-	}
-	if gotReason != "llm_upstream" {
-		t.Fatalf("envelope.Error.Details.reason = %q, want %q", gotReason, "llm_upstream")
-	}
-}
+		errorEnvelopeServer(he).ServeHTTP(w, req)
 
-func TestErrorEnvelope_NonHTTPError_Returns500WithoutReason(t *testing.T) {
-	t.Parallel()
+		if w.Code != http.StatusBadGateway {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusBadGateway)
+		}
+		env := decodeEnvelope(t, w.Body.Bytes())
+		if env.Error == nil {
+			t.Fatal("envelope.Error is nil")
+		}
+		gotReason, ok := env.Error.Details["reason"].(string)
+		if !ok {
+			t.Fatalf("envelope.Error.Details.reason missing or not a string: %v", env.Error.Details)
+		}
+		if gotReason != "llm_upstream" {
+			t.Fatalf("envelope.Error.Details.reason = %q, want %q", gotReason, "llm_upstream")
+		}
+	})
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
+	t.Run("maps a non-HTTPError to a 500 envelope without details", func(t *testing.T) {
+		t.Parallel()
 
-	errorEnvelopeServer(errors.New("some plain error")).ServeHTTP(w, req)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/boom", nil)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-	env := decodeEnvelope(t, w.Body.Bytes())
-	if env.Error == nil || env.Error.Code != http.StatusInternalServerError {
-		t.Fatalf("envelope.Error = %+v, want code=500", env.Error)
-	}
-	if _, present := env.Error.Details["reason"]; present {
-		t.Fatalf("envelope.Error.Details.reason must be absent for plain errors; got %v", env.Error.Details)
-	}
+		errorEnvelopeServer(errors.New("some plain error")).ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+		}
+		env := decodeEnvelope(t, w.Body.Bytes())
+		if env.Error == nil || env.Error.Code != http.StatusInternalServerError {
+			t.Fatalf("envelope.Error = %+v, want code=500", env.Error)
+		}
+		if _, present := env.Error.Details["reason"]; present {
+			t.Fatalf("envelope.Error.Details.reason must be absent for plain errors; got %v", env.Error.Details)
+		}
+	})
 }

@@ -23,7 +23,6 @@ func TestSentinels_MatchSentinelMap(t *testing.T) {
 		{"ErrExtractionNotFound", analyzer.ErrExtractionNotFound, http.StatusNotFound, "extraction_not_found"},
 		{"ErrExtractionNotReady", analyzer.ErrExtractionNotReady, http.StatusConflict, "extraction_not_ready"},
 		{"ErrLLMUpstream", analyzer.ErrLLMUpstream, http.StatusBadGateway, "llm_upstream"},
-		{"ErrAnalyzerMalformedResponse", analyzer.ErrAnalyzerMalformedResponse, http.StatusBadGateway, "llm_malformed_response"},
 		{"ErrAnalysisNotFound", analyzer.ErrAnalysisNotFound, http.StatusNotFound, "analysis_not_found"},
 		{"ErrCatalogueUnavailable", analyzer.ErrCatalogueUnavailable, http.StatusInternalServerError, ""},
 	}

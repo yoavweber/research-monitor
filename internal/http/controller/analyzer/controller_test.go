@@ -37,9 +37,9 @@ func sample(t time.Time) *domain.Analysis {
 		ShortSummary:         "short text",
 		LongSummary:          "long text",
 		ThesisAngleFlag:      true,
-		ThesisAngleRationale: "promising",
+		ThesisAngleRationale: "placeholder",
 		Model:                "fake",
-		PromptVersion:        "short.v1+long.v1+thesis.v1",
+		PromptVersion:        "analyzer.short.v1+analyzer.long.v1",
 		CreatedAt:            t,
 		UpdatedAt:            t,
 	}
@@ -54,10 +54,6 @@ func decodeAnalysis(t *testing.T, body []byte) analyzerctrl.AnalysisResponse {
 	return env.Data
 }
 
-// errorEnvelope is the wire shape decoded from the standard error path.
-// common.Envelope's Error field is unexported; decoding through this typed
-// shape avoids the map[string]any soup the controller test would otherwise
-// drown in for status-code/reason assertions.
 type errorEnvelope struct {
 	Error common.Error `json:"error"`
 }
@@ -71,241 +67,168 @@ func decodeError(t *testing.T, body []byte) common.Error {
 	return env.Error
 }
 
-func TestSubmit_HappyPath_Returns200WithAnalysisShape(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC)
-	fake := &mocks.AnalyzerUseCaseFake{
-		AnalyzeFn: func(_ context.Context, id string) (*domain.Analysis, error) {
-			a := sample(now)
-			a.ExtractionID = id
-			return a, nil
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":"ex-1"}`))
+func postAnalyses(t *testing.T, fake *mocks.AnalyzerUseCaseFake, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
-	}
-	got := decodeAnalysis(t, w.Body.Bytes())
-	if got.ExtractionID != "ex-1" {
-		t.Errorf("extraction_id = %q", got.ExtractionID)
-	}
-	if !got.ThesisAngleFlag {
-		t.Errorf("thesis_angle_flag = false, want true")
-	}
-	if got.ShortSummary != "short text" || got.LongSummary != "long text" {
-		t.Errorf("summary fields = %q / %q", got.ShortSummary, got.LongSummary)
-	}
-	if got.CreatedAt.IsZero() {
-		t.Errorf("created_at not set")
-	}
+	newEngine(analyzerctrl.NewController(fake)).ServeHTTP(w, req)
+	return w
 }
 
-func TestGet_HappyPath_Returns200(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC)
-	fake := &mocks.AnalyzerUseCaseFake{
-		GetFn: func(_ context.Context, id string) (*domain.Analysis, error) {
-			a := sample(now)
-			a.ExtractionID = id
-			return a, nil
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/analyses/ex-7", nil)
+func getAnalysis(t *testing.T, fake *mocks.AnalyzerUseCaseFake, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/analyses/"+id, nil)
 	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
-	}
-	got := decodeAnalysis(t, w.Body.Bytes())
-	if got.ExtractionID != "ex-7" {
-		t.Errorf("extraction_id = %q, want ex-7", got.ExtractionID)
-	}
-	if fake.GetCalls != 1 {
-		t.Errorf("GetCalls = %d, want 1", fake.GetCalls)
-	}
+	newEngine(analyzerctrl.NewController(fake)).ServeHTTP(w, req)
+	return w
 }
 
-func TestSubmit_EmptyExtractionID_Returns400AndDoesNotInvokeUseCase(t *testing.T) {
+func TestSubmit(t *testing.T) {
 	t.Parallel()
 
-	fake := &mocks.AnalyzerUseCaseFake{}
-	ctrl := analyzerctrl.NewController(fake)
+	t.Run("returns 200 and the documented analysis envelope on success", func(t *testing.T) {
+		t.Parallel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":""}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
+		now := time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC)
+		fake := &mocks.AnalyzerUseCaseFake{
+			AnalyzeFn: func(_ context.Context, id string) (*domain.Analysis, error) {
+				a := sample(now)
+				a.ExtractionID = id
+				return a, nil
+			},
+		}
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status=%d, want 400; body=%s", w.Code, w.Body.String())
-	}
-	if fake.AnalyzeCalls != 0 {
-		t.Errorf("Analyze invoked despite bad request: calls=%d", fake.AnalyzeCalls)
-	}
+		w := postAnalyses(t, fake, `{"extraction_id":"ex-1"}`)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
+		}
+		got := decodeAnalysis(t, w.Body.Bytes())
+		if got.ExtractionID != "ex-1" {
+			t.Errorf("extraction_id = %q", got.ExtractionID)
+		}
+		if !got.ThesisAngleFlag {
+			t.Errorf("thesis_angle_flag = false, want true")
+		}
+		if got.ShortSummary != "short text" || got.LongSummary != "long text" {
+			t.Errorf("summary fields = %q / %q", got.ShortSummary, got.LongSummary)
+		}
+		if got.CreatedAt.IsZero() {
+			t.Errorf("created_at not set")
+		}
+	})
+
+	t.Run("returns 400 and skips the use case for an empty extraction_id", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &mocks.AnalyzerUseCaseFake{}
+
+		w := postAnalyses(t, fake, `{"extraction_id":""}`)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d, want 400; body=%s", w.Code, w.Body.String())
+		}
+		if fake.AnalyzeCalls != 0 {
+			t.Errorf("Analyze invoked despite bad request: calls=%d", fake.AnalyzeCalls)
+		}
+	})
+
+	t.Run("returns 400 for a malformed JSON body", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &mocks.AnalyzerUseCaseFake{}
+
+		w := postAnalyses(t, fake, `{not json`)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d, want 400; body=%s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("maps each sentinel onto the documented status code and reason", func(t *testing.T) {
+		t.Parallel()
+
+		cases := []struct {
+			name       string
+			err        error
+			wantStatus int
+			wantReason string
+		}{
+			{"extraction not found", domain.ErrExtractionNotFound, http.StatusNotFound, "extraction_not_found"},
+			{"extraction not ready", domain.ErrExtractionNotReady, http.StatusConflict, "extraction_not_ready"},
+			{"llm transport error", errors.Join(domain.ErrLLMUpstream, errors.New("boom")), http.StatusBadGateway, "llm_upstream"},
+			{"catalogue unavailable carries no reason", domain.ErrCatalogueUnavailable, http.StatusInternalServerError, ""},
+		}
+
+		for _, tc := range cases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				fake := &mocks.AnalyzerUseCaseFake{
+					AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) { return nil, tc.err },
+				}
+
+				w := postAnalyses(t, fake, `{"extraction_id":"ex-x"}`)
+
+				if w.Code != tc.wantStatus {
+					t.Fatalf("status=%d, want %d; body=%s", w.Code, tc.wantStatus, w.Body.String())
+				}
+				got := decodeError(t, w.Body.Bytes())
+				gotReason, _ := got.Details["reason"].(string)
+				if gotReason != tc.wantReason {
+					t.Errorf("details.reason = %q, want %q", gotReason, tc.wantReason)
+				}
+			})
+		}
+	})
 }
 
-func TestSubmit_MalformedJSON_Returns400(t *testing.T) {
+func TestGet(t *testing.T) {
 	t.Parallel()
 
-	fake := &mocks.AnalyzerUseCaseFake{}
-	ctrl := analyzerctrl.NewController(fake)
+	t.Run("returns 200 with the documented envelope on success", func(t *testing.T) {
+		t.Parallel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{not json`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
+		now := time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC)
+		fake := &mocks.AnalyzerUseCaseFake{
+			GetFn: func(_ context.Context, id string) (*domain.Analysis, error) {
+				a := sample(now)
+				a.ExtractionID = id
+				return a, nil
+			},
+		}
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status=%d, want 400; body=%s", w.Code, w.Body.String())
-	}
-}
+		w := getAnalysis(t, fake, "ex-7")
 
-func TestSubmit_ExtractionNotFound_Returns404(t *testing.T) {
-	t.Parallel()
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
+		}
+		got := decodeAnalysis(t, w.Body.Bytes())
+		if got.ExtractionID != "ex-7" {
+			t.Errorf("extraction_id = %q, want ex-7", got.ExtractionID)
+		}
+		if fake.GetCalls != 1 {
+			t.Errorf("GetCalls = %d, want 1", fake.GetCalls)
+		}
+	})
 
-	fake := &mocks.AnalyzerUseCaseFake{
-		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
-			return nil, domain.ErrExtractionNotFound
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
+	t.Run("returns 404 with the analysis_not_found reason for a missing id", func(t *testing.T) {
+		t.Parallel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":"missing"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
+		fake := &mocks.AnalyzerUseCaseFake{
+			GetFn: func(context.Context, string) (*domain.Analysis, error) { return nil, domain.ErrAnalysisNotFound },
+		}
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status=%d, want 404; body=%s", w.Code, w.Body.String())
-	}
-	got := decodeError(t, w.Body.Bytes())
-	if reason, _ := got.Details["reason"].(string); reason != "extraction_not_found" {
-		t.Errorf("details.reason = %q, want extraction_not_found", reason)
-	}
-}
+		w := getAnalysis(t, fake, "missing")
 
-func TestSubmit_ExtractionNotReady_Returns409(t *testing.T) {
-	t.Parallel()
-
-	fake := &mocks.AnalyzerUseCaseFake{
-		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
-			return nil, domain.ErrExtractionNotReady
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":"ex-pending"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
-
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status=%d, want 409; body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestSubmit_LLMUpstream_Returns502WithReason(t *testing.T) {
-	t.Parallel()
-
-	fake := &mocks.AnalyzerUseCaseFake{
-		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
-			return nil, errors.Join(domain.ErrLLMUpstream, errors.New("transport boom"))
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":"ex-fail"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("status=%d, want 502; body=%s", w.Code, w.Body.String())
-	}
-	got := decodeError(t, w.Body.Bytes())
-	if reason, _ := got.Details["reason"].(string); reason != "llm_upstream" {
-		t.Errorf("details.reason = %q, want llm_upstream", reason)
-	}
-}
-
-func TestSubmit_LLMMalformed_Returns502WithReason(t *testing.T) {
-	t.Parallel()
-
-	fake := &mocks.AnalyzerUseCaseFake{
-		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
-			return nil, domain.ErrAnalyzerMalformedResponse
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":"ex-bad"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("status=%d, want 502; body=%s", w.Code, w.Body.String())
-	}
-	got := decodeError(t, w.Body.Bytes())
-	if reason, _ := got.Details["reason"].(string); reason != "llm_malformed_response" {
-		t.Errorf("details.reason = %q, want llm_malformed_response", reason)
-	}
-}
-
-func TestSubmit_CatalogueUnavailable_Returns500WithoutReason(t *testing.T) {
-	t.Parallel()
-
-	fake := &mocks.AnalyzerUseCaseFake{
-		AnalyzeFn: func(context.Context, string) (*domain.Analysis, error) {
-			return nil, domain.ErrCatalogueUnavailable
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/analyses", strings.NewReader(`{"extraction_id":"ex-fail"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status=%d, want 500; body=%s", w.Code, w.Body.String())
-	}
-	got := decodeError(t, w.Body.Bytes())
-	if got.Details != nil {
-		t.Errorf("500 response should not carry details: %v", got.Details)
-	}
-}
-
-func TestGet_AnalysisNotFound_Returns404(t *testing.T) {
-	t.Parallel()
-
-	fake := &mocks.AnalyzerUseCaseFake{
-		GetFn: func(context.Context, string) (*domain.Analysis, error) {
-			return nil, domain.ErrAnalysisNotFound
-		},
-	}
-	ctrl := analyzerctrl.NewController(fake)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/analyses/missing", nil)
-	w := httptest.NewRecorder()
-	newEngine(ctrl).ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status=%d, want 404; body=%s", w.Code, w.Body.String())
-	}
-	got := decodeError(t, w.Body.Bytes())
-	if reason, _ := got.Details["reason"].(string); reason != "analysis_not_found" {
-		t.Errorf("details.reason = %q, want analysis_not_found", reason)
-	}
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("status=%d, want 404; body=%s", w.Code, w.Body.String())
+		}
+		got := decodeError(t, w.Body.Bytes())
+		if reason, _ := got.Details["reason"].(string); reason != "analysis_not_found" {
+			t.Errorf("details.reason = %q, want analysis_not_found", reason)
+		}
+	})
 }

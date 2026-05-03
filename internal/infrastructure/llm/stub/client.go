@@ -1,8 +1,8 @@
 // Package stub is the placeholder shared.LLMClient adapter wired by
 // bootstrap until a real provider (e.g. Anthropic) ships. The same type
-// also serves as the scriptable test double — Queue* methods let unit
-// tests inject specific outcomes; production leaves the queue empty and
-// gets the per-prompt default response.
+// also serves as the scriptable test double — Queue* methods append
+// outcomes to a FIFO; Complete pops the head. Production leaves the queue
+// empty and gets the per-prompt default response.
 package stub
 
 import (
@@ -16,21 +16,14 @@ import (
 
 const modelName = "fake"
 
-// thesisDefault always flags true with a "default" rationale because no
-// thesis profile is defined yet — without a definition of "what counts" the
-// stub has no basis to discriminate. Until the thesis-profile follow-up
-// ships, every paper rides through with this placeholder so the analyses
-// table doesn't carry fake-discriminated values.
-const thesisDefault = `{"flag": true, "rationale": "default — no thesis profile defined yet; revisit when the thesis-profile spec ships."}`
-
 type Result struct {
 	Response *shared.LLMResponse
 	Err      error
 }
 
 // Client is both the prod default and the unit-test scriptable double.
-// Empty queue → per-prompt canned response; Queue* prepends behaviour for
-// scenarios that need to fail or return specific text.
+// Empty queue → per-prompt canned response; Queue* appends behaviour for
+// scenarios that need to fail or return specific text (FIFO).
 type Client struct {
 	mu sync.Mutex
 
@@ -98,8 +91,6 @@ func defaultText(version string) string {
 		return "Stub short summary placeholder."
 	case app.PromptVersionLong:
 		return "Stub long summary placeholder. The stub provider does not read the paper body."
-	case app.PromptVersionThesis:
-		return thesisDefault
 	default:
 		return fmt.Sprintf("stub: unsupported prompt version %s", version)
 	}
