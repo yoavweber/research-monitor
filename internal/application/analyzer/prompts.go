@@ -19,6 +19,13 @@ Constraints:
 - Plain prose, may use short paragraphs but no markdown headers or lists.
 - Cover problem, approach, key findings, and stated limitations.`
 
+// TODO(thesis-profile): this prompt has no operator-supplied criterion for
+// what "thesis-angle candidate" actually means, so the LLM is guessing. The
+// stub currently sidesteps the gap by returning a hardcoded flag=true with a
+// "default" rationale. Before the real provider ships, a follow-up spec must
+// add an editable thesis-profile (e.g. data/thesis_profile.md, mirroring
+// arxiv-search-defaults) and inject it into this system prompt — otherwise
+// the persisted thesis_angle_flag is meaningless.
 const promptThesisSystem = `You are a research assistant assessing whether the paper below is a candidate
 for a DeFi research thesis angle.
 

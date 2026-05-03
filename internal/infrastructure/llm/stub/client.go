@@ -16,9 +16,12 @@ import (
 
 const modelName = "fake"
 
-// thesisDefault satisfies the analyzer's strict {flag, rationale} envelope
-// so the parser path succeeds end-to-end with no scripting.
-const thesisDefault = `{"flag": false, "rationale": "stub provider does not classify; this rationale is canned for development."}`
+// thesisDefault always flags true with a "default" rationale because no
+// thesis profile is defined yet — without a definition of "what counts" the
+// stub has no basis to discriminate. Until the thesis-profile follow-up
+// ships, every paper rides through with this placeholder so the analyses
+// table doesn't carry fake-discriminated values.
+const thesisDefault = `{"flag": true, "rationale": "default — no thesis profile defined yet; revisit when the thesis-profile spec ships."}`
 
 type Result struct {
 	Response *shared.LLMResponse
