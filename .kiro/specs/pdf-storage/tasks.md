@@ -10,7 +10,7 @@
   - Observable completion: starting the binary with the variable unset uses `data/pdfs`; starting with the variable pointing at a regular file fails fast with a startup error mentioning `PDF_STORE_ROOT`.
   - _Requirements: 5.1, 5.3_
 
-- [ ] 1.2 Create the pdf domain package skeleton with package doc and error sentinels
+- [x] 1.2 Create the pdf domain package skeleton with package doc and error sentinels
   - Create the new `pdf` domain package with a package-level doc that states purpose and the dependency rule (stdlib + `domain/shared` only).
   - Declare the three exported error sentinels for invalid-key, fetch-failure, and store-failure categories. Document that each is intended to be used with `errors.Is` and that implementations wrap the underlying cause through `%w`.
   - Observable completion: the new package compiles in isolation; `go build ./...` from the repo root succeeds; the three sentinels are exported and reachable from outside the package.
@@ -94,6 +94,11 @@
   - _Requirements: 1.1, 1.2, 1.5, 2.1, 2.2, 3.1, 3.3_
   - _Depends: 3.3, 4.1_
   - _Boundary: infrastructure/pdf/local integration_
+
+## Implementation Notes
+
+- Pre-existing dirty file `internal/infrastructure/persistence/extraction/model.go` is unrelated user scratchpad work; selective staging excludes it from every pdf-storage commit. Future reviewer prompts should note this to avoid false-positive boundary rejections.
+- Env-vs-constructor validation split: env-side validates Stat + writability probe via `os.CreateTemp` (no `MkdirAll`); store constructor (Task 3.2) owns `MkdirAll`. Tests for env validation use `t.Setenv` and therefore correctly omit `t.Parallel()` per testing.md's process-global carve-out.
 
 ## Deferred Requirements
 
