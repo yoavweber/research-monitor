@@ -74,6 +74,39 @@ definitions:
           $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_source.Response'
         type: array
     type: object
+  internal_http_controller_analyzer.AnalysisEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/internal_http_controller_analyzer.AnalysisResponse'
+    type: object
+  internal_http_controller_analyzer.AnalysisResponse:
+    properties:
+      created_at:
+        type: string
+      extraction_id:
+        type: string
+      long_summary:
+        type: string
+      model:
+        type: string
+      prompt_version:
+        type: string
+      short_summary:
+        type: string
+      thesis_angle_flag:
+        type: boolean
+      thesis_angle_rationale:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  internal_http_controller_analyzer.SubmitAnalysisRequest:
+    properties:
+      extraction_id:
+        type: string
+    required:
+    - extraction_id
+    type: object
   internal_http_controller_arxiv.EntryResponse:
     properties:
       abs_url:
@@ -122,6 +155,56 @@ definitions:
         type: array
       fetched_at:
         type: string
+    type: object
+  internal_http_controller_extraction.ExtractionStatusEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/internal_http_controller_extraction.ExtractionStatusResponse'
+    type: object
+  internal_http_controller_extraction.ExtractionStatusResponse:
+    properties:
+      body_markdown:
+        type: string
+      failure_message:
+        type: string
+      failure_reason:
+        description: Failure branch — populated iff status == failed.
+        type: string
+      id:
+        type: string
+      metadata:
+        $ref: '#/definitions/internal_http_controller_extraction.MetadataDTO'
+      source_id:
+        type: string
+      source_type:
+        type: string
+      status:
+        type: string
+      title:
+        description: |-
+          Artifact branch — populated iff status == done. Metadata is a pointer
+          so the entire object disappears from JSON when nil.
+        type: string
+    type: object
+  internal_http_controller_extraction.MetadataDTO:
+    properties:
+      content_type:
+        type: string
+      word_count:
+        type: integer
+    type: object
+  internal_http_controller_extraction.SubmitExtractionRequest:
+    properties:
+      pdf_path:
+        type: string
+      source_id:
+        type: string
+      source_type:
+        type: string
+    required:
+    - pdf_path
+    - source_id
+    - source_type
     type: object
   internal_http_controller_paper.PaperEnvelope:
     properties:
@@ -179,6 +262,85 @@ info:
   title: Research Monitor API
   version: "1.0"
 paths:
+  /analyses:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Analysis request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_http_controller_analyzer.SubmitAnalysisRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Analysis persisted
+          schema:
+            $ref: '#/definitions/internal_http_controller_analyzer.AnalysisEnvelope'
+        "400":
+          description: Invalid request body
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Extraction not found
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "409":
+          description: Extraction not in done status
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "500":
+          description: Analysis storage unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "502":
+          description: LLM upstream failed
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Submit an analysis
+      tags:
+      - Analyses
+  /analyses/{extraction_id}:
+    get:
+      parameters:
+      - description: Extraction id
+        in: path
+        name: extraction_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Analysis found
+          schema:
+            $ref: '#/definitions/internal_http_controller_analyzer.AnalysisEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Analysis not found
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "500":
+          description: Analysis storage unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Get an analysis by extraction id
+      tags:
+      - Analyses
   /arxiv/fetch:
     get:
       description: |-
@@ -213,6 +375,73 @@ paths:
       summary: Fetch latest arXiv entries
       tags:
       - Arxiv
+  /extractions:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Extraction request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_http_controller_extraction.SubmitExtractionRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Extraction enqueued
+          schema:
+            $ref: '#/definitions/internal_http_controller_extraction.ExtractionStatusEnvelope'
+        "400":
+          description: Invalid request body
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "500":
+          description: Catalogue unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Submit an extraction
+      tags:
+      - Extractions
+  /extractions/{id}:
+    get:
+      parameters:
+      - description: Extraction id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Extraction state
+          schema:
+            $ref: '#/definitions/internal_http_controller_extraction.ExtractionStatusEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Extraction not found
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "500":
+          description: Catalogue unavailable
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Get extraction status by id
+      tags:
+      - Extractions
   /papers:
     get:
       produces:
