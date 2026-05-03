@@ -45,7 +45,7 @@
   - _Requirements: 1.3, 4.2, 4.3_
   - _Boundary: infrastructure/pdf/local locator_
 
-- [ ] 3.2 (P) Implement the local store constructor with root validation and canonical-path computation
+- [x] 3.2 (P) Implement the local store constructor with root validation and canonical-path computation
   - Implement an unexported store type and an exported constructor that takes the storage root, a fetcher port, and a logger port.
   - The constructor calls `MkdirAll` on the root with mode `0o755`; if the root resolves to a regular file or is not writable, the constructor returns an error that mentions the misconfigured root and identifies the failure as a storage failure.
   - Implement the canonical-path helper that yields `<root>/<source_type>/<source_id>.pdf` for a key, ensuring it stays within the root for any key that has already passed `Validate`.
