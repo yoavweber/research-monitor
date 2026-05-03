@@ -37,7 +37,7 @@
 
 - [ ] 3. Local filesystem implementation
 
-- [ ] 3.1 (P) Implement the local locator with path and open
+- [x] 3.1 (P) Implement the local locator with path and open
   - Create the local locator type that holds the canonical path and exposes both the path accessor and a context-aware open that returns a read closer over the on-disk file.
   - The open accessor accepts a context for interface conformance with future remote backends; v1 may ignore it but must not introduce a race on file-handle close if the caller never reads.
   - Provide colocated unit tests under a real temp directory: write a known byte sequence, build the locator, assert the path accessor and the open accessor return byte-for-byte the same content.
