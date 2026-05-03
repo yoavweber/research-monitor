@@ -27,7 +27,7 @@
   - _Requirements: 1.4, 5.4_
   - _Boundary: domain/pdf identity value object_
 
-- [ ] 2.2 (P) Define the Store and Locator port interfaces
+- [x] 2.2 (P) Define the Store and Locator port interfaces
   - Declare the store port with a single method that takes a context and a key and returns a locator or an error.
   - Declare the locator port with a path accessor returning a real on-disk path and a context-aware open accessor returning a stream-like read closer.
   - Document each method's pre/post conditions, the error contract (which sentinel each path returns), and the locator's stability guarantees over its lifetime.
