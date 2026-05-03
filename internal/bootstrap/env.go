@@ -30,6 +30,7 @@ type Env struct {
 	MineruPath             string        `mapstructure:"MINERU_PATH"`
 	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
 	MineruTimeout          time.Duration `mapstructure:"-"`
+	PDFStoreRoot           string        `mapstructure:"PDF_STORE_ROOT"`
 }
 
 func LoadEnv() (*Env, error) {
@@ -51,6 +52,7 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("EXTRACTION_JOB_EXPIRY", "1h")
 	v.SetDefault("MINERU_PATH", "mineru")
 	v.SetDefault("MINERU_TIMEOUT", "10m")
+	v.SetDefault("PDF_STORE_ROOT", "data/pdfs")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
 	// observes it even when no .env file and no default exists. Without this,
@@ -70,6 +72,7 @@ func LoadEnv() (*Env, error) {
 		"EXTRACTION_JOB_EXPIRY",
 		"MINERU_PATH",
 		"MINERU_TIMEOUT",
+		"PDF_STORE_ROOT",
 	} {
 		_ = v.BindEnv(key)
 	}
@@ -129,7 +132,41 @@ func LoadEnv() (*Env, error) {
 	}
 	env.MineruTimeout = mineruTimeout
 
+	if err := validatePDFStoreRoot(env.PDFStoreRoot); err != nil {
+		return nil, err
+	}
+
 	return &env, nil
+}
+
+// validatePDFStoreRoot enforces the env-side half of the PDF storage root
+// contract: the directory is allowed to be missing (the store constructor
+// owns lazy creation) but must not point at an existing non-directory or an
+// existing directory that the process cannot write into. Any violation must
+// surface a startup error naming PDF_STORE_ROOT so the operator can locate
+// the misconfiguration without reading the implementation.
+func validatePDFStoreRoot(root string) error {
+	if strings.TrimSpace(root) == "" {
+		return fmt.Errorf("PDF_STORE_ROOT is required and must be a non-empty path")
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("PDF_STORE_ROOT %q cannot be inspected: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("PDF_STORE_ROOT %q exists but is not a directory", root)
+	}
+	probe, err := os.CreateTemp(root, ".pdf-store-root-probe-*")
+	if err != nil {
+		return fmt.Errorf("PDF_STORE_ROOT %q is not writable: %w", root, err)
+	}
+	probeName := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(probeName)
+	return nil
 }
 
 func requirePositiveInt(name string, v int) error {

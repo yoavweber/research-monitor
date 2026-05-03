@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -388,4 +390,119 @@ func TestLoadEnv_MineruPathEmptyRejected(t *testing.T) {
 	if !strings.Contains(err.Error(), "MINERU_PATH") {
 		t.Errorf("error %q does not mention MINERU_PATH", err.Error())
 	}
+}
+
+// --- pdf store root config block -----------------------------------------
+//
+// Covers requirements 5.1 (env-driven storage root with default `data/pdfs`)
+// and 5.3 (fail-fast at startup when the configured root is not a directory
+// or is not writable). Env-side validation only inspects the path with Stat;
+// directory creation is owned by the store constructor (see design.md
+// "Components and Interfaces / bootstrap / env extension"), so a missing
+// path is accepted here and created lazily later.
+
+func TestLoadEnv_PDFStoreRootDefault(t *testing.T) {
+
+	t.Run("unset variable resolves to data/pdfs default", func(t *testing.T) {
+
+		setRequiredEnv(t)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFStoreRoot != "data/pdfs" {
+			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, "data/pdfs")
+		}
+	})
+}
+
+func TestLoadEnv_PDFStoreRootExistingWritableDirectory(t *testing.T) {
+
+	t.Run("existing writable directory is accepted", func(t *testing.T) {
+
+		setRequiredEnv(t)
+		dir := t.TempDir()
+		t.Setenv("PDF_STORE_ROOT", dir)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFStoreRoot != dir {
+			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, dir)
+		}
+	})
+}
+
+func TestLoadEnv_PDFStoreRootMissingPathAccepted(t *testing.T) {
+
+	t.Run("path that does not exist is accepted because the store creates it lazily", func(t *testing.T) {
+
+		setRequiredEnv(t)
+		missing := filepath.Join(t.TempDir(), "not-yet-created")
+		t.Setenv("PDF_STORE_ROOT", missing)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFStoreRoot != missing {
+			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, missing)
+		}
+	})
+}
+
+func TestLoadEnv_PDFStoreRootRegularFileRejected(t *testing.T) {
+
+	t.Run("regular file at the configured path fails fast and names PDF_STORE_ROOT", func(t *testing.T) {
+
+		setRequiredEnv(t)
+		regularFile := filepath.Join(t.TempDir(), "not-a-dir.pdf")
+		if err := os.WriteFile(regularFile, []byte("x"), 0o644); err != nil {
+			t.Fatalf("seed regular file: %v", err)
+		}
+		t.Setenv("PDF_STORE_ROOT", regularFile)
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for PDF_STORE_ROOT pointing at a regular file")
+		}
+		if !strings.Contains(err.Error(), "PDF_STORE_ROOT") {
+			t.Errorf("error %q does not mention PDF_STORE_ROOT", err.Error())
+		}
+	})
+}
+
+func TestLoadEnv_PDFStoreRootUnwritableDirectoryRejected(t *testing.T) {
+
+	t.Run("existing directory without write permission fails fast and names PDF_STORE_ROOT", func(t *testing.T) {
+
+		if os.Geteuid() == 0 {
+			t.Skip("running as root bypasses unix permission checks")
+		}
+
+		setRequiredEnv(t)
+		dir := filepath.Join(t.TempDir(), "readonly")
+		if err := os.Mkdir(dir, 0o500); err != nil {
+			t.Fatalf("seed read-only directory: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = os.Chmod(dir, 0o700)
+		})
+		t.Setenv("PDF_STORE_ROOT", dir)
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for read-only PDF_STORE_ROOT directory")
+		}
+		if !strings.Contains(err.Error(), "PDF_STORE_ROOT") {
+			t.Errorf("error %q does not mention PDF_STORE_ROOT", err.Error())
+		}
+	})
 }
