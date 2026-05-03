@@ -18,7 +18,7 @@
 
 - [ ] 2. Domain: identity value object and ports
 
-- [ ] 2.1 (P) Implement the PDF identity value object with validation
+- [x] 2.1 (P) Implement the PDF identity value object with validation
   - Define the value object that carries source type, source identifier, and the fetch URL.
   - Implement `Validate` to reject any empty-after-trim field with `ErrInvalidKey` wrapping a descriptive cause.
   - Add defense-in-depth checks that reject identifier fields containing path-traversal or path-separator characters; document this rule in the field godoc.
