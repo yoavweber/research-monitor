@@ -54,7 +54,7 @@
   - _Requirements: 5.2, 5.3, 5.4_
   - _Boundary: infrastructure/pdf/local store construction_
 
-- [ ] 3.3 Implement Ensure end-to-end with cache gate, atomic fetch-and-write, and error classification
+- [x] 3.3 Implement Ensure end-to-end with cache gate, atomic fetch-and-write, and error classification
   - Validate the key first; on rejection return without touching the filesystem or the fetcher.
   - Existence gate: when the canonical file exists with non-zero size, return a locator immediately without invoking the fetcher; treat zero-byte files as not stored and proceed to fetch.
   - Fetch-and-write recipe: ensure the per-source-type subdirectory exists, create a sibling temp file with a randomized suffix in the same directory, write the fetched bytes, close the temp file, then rename it to the canonical path. The canonical path must never link to a partially-written file.

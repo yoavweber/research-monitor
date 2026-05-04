@@ -83,10 +83,89 @@ func (s *localStore) canonicalPath(key pdf.Key) string {
 	return filepath.Join(s.root, key.SourceType, key.SourceID+".pdf")
 }
 
-// Ensure is implemented by Task 3.3. The panic stub guarantees that any
-// accidental call before the real implementation lands fails loudly rather
-// than silently returning a misleading nil error. Satisfies the pdf.Store
-// interface so the rest of the package compiles in the meantime.
+// Ensure materializes the artifact identified by key onto the local
+// filesystem and returns a Locator over the canonical path. It is the
+// fetch-and-cache entry point promised by pdf.Store.
+//
+// Order of operations (each step exists for a reason; see comments inline):
+//  1. Validate key. Reject without I/O — bad inputs must never touch the
+//     filesystem or the upstream fetcher.
+//  2. Existence gate. A non-zero canonical file is treated as a cache
+//     hit; we return immediately without invoking the fetcher. A
+//     zero-byte file is a left-over sentinel from an earlier failure
+//     and we deliberately fall through to fetch (Req 2.4).
+//  3. Fetch. Errors here are wrapped with both pdf.ErrFetch and the
+//     underlying cause via errors.Join so callers can classify with
+//     errors.Is against pdf.ErrFetch, shared.ErrBadStatus, or
+//     context.Canceled / context.DeadlineExceeded.
+//  4. Atomic write. Create a sibling temp in the same directory as the
+//     canonical path, write, close, then rename. Same-directory rename
+//     is atomic on POSIX, so the canonical path either points at a
+//     fully-written file or at nothing — never at a partial.
+//  5. Cleanup. On any error after temp creation, remove the temp file
+//     so we never leak *.tmp siblings.
+//
+// An empty fetcher response body is treated as a fetch failure rather
+// than written to disk: a zero-byte canonical file would be wasted disk
+// state that the next Ensure call would re-fetch anyway, and would
+// violate the contract that successful Ensure always yields readable
+// bytes.
 func (s *localStore) Ensure(ctx context.Context, key pdf.Key) (pdf.Locator, error) {
-	panic("pdf local store: Ensure not implemented; task 3.3 owns this")
+	if err := key.Validate(); err != nil {
+		return nil, err
+	}
+
+	canonical := s.canonicalPath(key)
+
+	// Cache gate. We deliberately ignore non-nil os.Stat errors (including
+	// fs.ErrNotExist) and treat them as misses; the subsequent Mkdir/Create
+	// path will surface any genuine filesystem trouble as ErrStore with a
+	// concrete cause, which is more diagnostic than a stat error here.
+	if info, err := os.Stat(canonical); err == nil && info.Size() > 0 {
+		return newLocator(canonical), nil
+	}
+
+	parent := filepath.Dir(canonical)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: mkdir %q: %w", parent, err))
+	}
+
+	body, err := s.fetcher.Fetch(ctx, key.URL)
+	if err != nil {
+		// errors.Join preserves both directions of errors.Is so callers
+		// can identify the category (pdf.ErrFetch) and the underlying
+		// cause (shared.ErrBadStatus, context.Canceled, *url.Error, ...).
+		return nil, errors.Join(pdf.ErrFetch, fmt.Errorf("pdf local store: fetch %s/%s: %w", key.SourceType, key.SourceID, err))
+	}
+	if len(body) == 0 {
+		return nil, errors.Join(pdf.ErrFetch, fmt.Errorf("pdf local store: fetch %s/%s: empty response body", key.SourceType, key.SourceID))
+	}
+
+	// Same-directory temp ensures the rename is atomic; cross-device
+	// renames would not be. The randomized suffix from CreateTemp lets
+	// concurrent Ensure calls for the same key coexist without colliding
+	// on the temp filename — the loser's rename simply overwrites the
+	// winner's canonical bytes (idempotent for identical content).
+	tmp, err := os.CreateTemp(parent, key.SourceID+".*.pdf.tmp")
+	if err != nil {
+		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: create temp in %q: %w", parent, err))
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: write temp %q: %w", tmpPath, err))
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: close temp %q: %w", tmpPath, err))
+	}
+
+	if err := os.Rename(tmpPath, canonical); err != nil {
+		_ = os.Remove(tmpPath)
+		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: rename %q -> %q: %w", tmpPath, canonical, err))
+	}
+
+	return newLocator(canonical), nil
 }
