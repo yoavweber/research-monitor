@@ -65,7 +65,7 @@
   - _Requirements: 1.1, 1.2, 1.5, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 5.4, 6.1_
   - _Boundary: infrastructure/pdf/local store Ensure_
 
-- [ ] 3.4 Add structured logging for fetched, cache-hit, and failed events
+- [x] 3.4 Add structured logging for fetched, cache-hit, and failed events
   - Emit a structured info-level event when a fetch occurs, with fields for source type, source identifier, byte count, and elapsed milliseconds.
   - Emit a structured info-level event on cache hits, with fields for source type, source identifier, and byte count.
   - Emit a structured warn-level event on fetch failures and an error-level event on storage failures, both with a category field that distinguishes fetch / store / invalid_key, and a formatted error string. No log field may carry response body bytes.

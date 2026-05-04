@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
@@ -112,6 +113,15 @@ func (s *localStore) canonicalPath(key pdf.Key) string {
 // bytes.
 func (s *localStore) Ensure(ctx context.Context, key pdf.Key) (pdf.Locator, error) {
 	if err := key.Validate(); err != nil {
+		// Validation failures originate in caller bugs rather than in
+		// infrastructure: warn level matches "client error" semantics
+		// (the third category alongside fetch/store in the Monitoring table).
+		s.logger.WarnContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "invalid_key",
+			"error", err.Error(),
+		)
 		return nil, err
 	}
 
@@ -122,23 +132,56 @@ func (s *localStore) Ensure(ctx context.Context, key pdf.Key) (pdf.Locator, erro
 	// path will surface any genuine filesystem trouble as ErrStore with a
 	// concrete cause, which is more diagnostic than a stat error here.
 	if info, err := os.Stat(canonical); err == nil && info.Size() > 0 {
+		s.logger.InfoContext(ctx, "pdf.store.cache_hit",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"bytes", int(info.Size()),
+		)
 		return newLocator(canonical), nil
 	}
 
 	parent := filepath.Dir(canonical)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: mkdir %q: %w", parent, err))
+		wrapped := errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: mkdir %q: %w", parent, err))
+		s.logger.ErrorContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "store",
+			"error", wrapped.Error(),
+		)
+		return nil, wrapped
 	}
+
+	// Time the fetch+write phase. A clock is not injected on localStore by
+	// design — adding one would expand NewStore's signature beyond what the
+	// design's Components and Interfaces section lists (Fetcher + Logger).
+	// time.Now() inline is acceptable here because duration_ms is an
+	// observability field, not a domain decision.
+	start := time.Now()
 
 	body, err := s.fetcher.Fetch(ctx, key.URL)
 	if err != nil {
 		// errors.Join preserves both directions of errors.Is so callers
 		// can identify the category (pdf.ErrFetch) and the underlying
 		// cause (shared.ErrBadStatus, context.Canceled, *url.Error, ...).
-		return nil, errors.Join(pdf.ErrFetch, fmt.Errorf("pdf local store: fetch %s/%s: %w", key.SourceType, key.SourceID, err))
+		wrapped := errors.Join(pdf.ErrFetch, fmt.Errorf("pdf local store: fetch %s/%s: %w", key.SourceType, key.SourceID, err))
+		s.logger.WarnContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "fetch",
+			"error", wrapped.Error(),
+		)
+		return nil, wrapped
 	}
 	if len(body) == 0 {
-		return nil, errors.Join(pdf.ErrFetch, fmt.Errorf("pdf local store: fetch %s/%s: empty response body", key.SourceType, key.SourceID))
+		wrapped := errors.Join(pdf.ErrFetch, fmt.Errorf("pdf local store: fetch %s/%s: empty response body", key.SourceType, key.SourceID))
+		s.logger.WarnContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "fetch",
+			"error", wrapped.Error(),
+		)
+		return nil, wrapped
 	}
 
 	// Same-directory temp ensures the rename is atomic; cross-device
@@ -148,24 +191,59 @@ func (s *localStore) Ensure(ctx context.Context, key pdf.Key) (pdf.Locator, erro
 	// winner's canonical bytes (idempotent for identical content).
 	tmp, err := os.CreateTemp(parent, key.SourceID+".*.pdf.tmp")
 	if err != nil {
-		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: create temp in %q: %w", parent, err))
+		wrapped := errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: create temp in %q: %w", parent, err))
+		s.logger.ErrorContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "store",
+			"error", wrapped.Error(),
+		)
+		return nil, wrapped
 	}
 	tmpPath := tmp.Name()
 
 	if _, err := tmp.Write(body); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
-		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: write temp %q: %w", tmpPath, err))
+		wrapped := errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: write temp %q: %w", tmpPath, err))
+		s.logger.ErrorContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "store",
+			"error", wrapped.Error(),
+		)
+		return nil, wrapped
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpPath)
-		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: close temp %q: %w", tmpPath, err))
+		wrapped := errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: close temp %q: %w", tmpPath, err))
+		s.logger.ErrorContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "store",
+			"error", wrapped.Error(),
+		)
+		return nil, wrapped
 	}
 
 	if err := os.Rename(tmpPath, canonical); err != nil {
 		_ = os.Remove(tmpPath)
-		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: rename %q -> %q: %w", tmpPath, canonical, err))
+		wrapped := errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: rename %q -> %q: %w", tmpPath, canonical, err))
+		s.logger.ErrorContext(ctx, "pdf.store.failed",
+			"source_type", key.SourceType,
+			"source_id", key.SourceID,
+			"category", "store",
+			"error", wrapped.Error(),
+		)
+		return nil, wrapped
 	}
+
+	s.logger.InfoContext(ctx, "pdf.store.fetched",
+		"source_type", key.SourceType,
+		"source_id", key.SourceID,
+		"bytes", len(body),
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
 
 	return newLocator(canonical), nil
 }

@@ -441,6 +441,256 @@ func TestStoreEnsure(t *testing.T) {
 	})
 }
 
+func TestStoreEnsureLogging(t *testing.T) {
+	t.Parallel()
+
+	t.Run("emits cache_hit event with bytes field on cache hit", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		key := newTestKey()
+		canonical := filepath.Join(root, key.SourceType, key.SourceID+".pdf")
+		seed := []byte("pre-existing bytes for cache hit logging")
+		seedFile(t, canonical, seed)
+		fetcher := &mocks.Fetcher{Body: []byte("never used")}
+		logger := &mocks.RecordingLogger{}
+		store := newTestStoreWithLogger(t, root, fetcher, logger)
+
+		_, err := store.Ensure(context.Background(), key)
+
+		if err != nil {
+			t.Fatalf("Ensure: unexpected error: %v", err)
+		}
+		records := matchingRecords(logger, "Info", "pdf.store.cache_hit")
+		if len(records) != 1 {
+			t.Fatalf("want exactly 1 cache_hit info record, got %d (all=%v)", len(records), logger.Records)
+		}
+		assertHasKeys(t, records[0], "source_type", "source_id", "bytes")
+		assertNoBodyArg(t, logger, seed)
+	})
+
+	t.Run("emits fetched event with byte count and duration on cache miss", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		body := bytesFilled(1024, 0xcd)
+		fetcher := &mocks.Fetcher{Body: body}
+		logger := &mocks.RecordingLogger{}
+		store := newTestStoreWithLogger(t, root, fetcher, logger)
+		key := newTestKey()
+
+		_, err := store.Ensure(context.Background(), key)
+
+		if err != nil {
+			t.Fatalf("Ensure: unexpected error: %v", err)
+		}
+		records := matchingRecords(logger, "Info", "pdf.store.fetched")
+		if len(records) != 1 {
+			t.Fatalf("want exactly 1 fetched info record, got %d (all=%v)", len(records), logger.Records)
+		}
+		rec := records[0]
+		assertHasKeys(t, rec, "source_type", "source_id", "bytes", "duration_ms")
+		if got, ok := rec.Args["bytes"].(int); !ok || got != len(body) {
+			t.Fatalf("bytes arg = %v (%T), want int(%d)", rec.Args["bytes"], rec.Args["bytes"], len(body))
+		}
+		switch d := rec.Args["duration_ms"].(type) {
+		case int64:
+			if d < 0 {
+				t.Fatalf("duration_ms negative: %d", d)
+			}
+		default:
+			t.Fatalf("duration_ms arg type = %T, want int64", rec.Args["duration_ms"])
+		}
+		assertNoBodyArg(t, logger, body)
+	})
+
+	t.Run("emits failed event at warn level for fetch error", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		fetcher := &mocks.Fetcher{Error: fmt.Errorf("%w: status=%d", shared.ErrBadStatus, 503)}
+		logger := &mocks.RecordingLogger{}
+		store := newTestStoreWithLogger(t, root, fetcher, logger)
+		key := newTestKey()
+
+		_, err := store.Ensure(context.Background(), key)
+
+		if err == nil {
+			t.Fatalf("Ensure: want error, got nil")
+		}
+		records := matchingRecords(logger, "Warn", "pdf.store.failed")
+		var fetchRec *mocks.LogRecord
+		for i := range records {
+			if cat, _ := records[i].Args["category"].(string); cat == "fetch" {
+				r := records[i]
+				fetchRec = &r
+				break
+			}
+		}
+		if fetchRec == nil {
+			t.Fatalf("want exactly 1 failed warn record with category=fetch, got %v", logger.Records)
+		}
+		assertHasKeys(t, *fetchRec, "source_type", "source_id", "category", "error")
+		if _, ok := fetchRec.Args["error"].(string); !ok {
+			t.Fatalf("error arg type = %T, want string", fetchRec.Args["error"])
+		}
+	})
+
+	t.Run("emits failed event at warn level for invalid_key", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		fetcher := &mocks.Fetcher{Body: []byte("never used")}
+		logger := &mocks.RecordingLogger{}
+		store := newTestStoreWithLogger(t, root, fetcher, logger)
+		bad := pdf.Key{SourceType: "paper", SourceID: "", URL: "https://example.invalid/p.pdf"}
+
+		_, err := store.Ensure(context.Background(), bad)
+
+		if err == nil {
+			t.Fatalf("Ensure: want error, got nil")
+		}
+		records := matchingRecords(logger, "Warn", "pdf.store.failed")
+		var rec *mocks.LogRecord
+		for i := range records {
+			if cat, _ := records[i].Args["category"].(string); cat == "invalid_key" {
+				r := records[i]
+				rec = &r
+				break
+			}
+		}
+		if rec == nil {
+			t.Fatalf("want failed warn record with category=invalid_key, got %v", logger.Records)
+		}
+		assertHasKeys(t, *rec, "source_type", "source_id", "category", "error")
+	})
+
+	t.Run("emits failed event at error level for storage failure", func(t *testing.T) {
+		t.Parallel()
+
+		if os.Geteuid() == 0 {
+			t.Skip("running as root, dir perms ignored")
+		}
+
+		root := t.TempDir()
+		subdir := filepath.Join(root, "paper")
+		if err := os.MkdirAll(subdir, 0o755); err != nil {
+			t.Fatalf("seed subdir: %v", err)
+		}
+		if err := os.Chmod(subdir, 0o555); err != nil {
+			t.Fatalf("chmod subdir: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(subdir, 0o755) })
+
+		fetcher := &mocks.Fetcher{Body: []byte("upstream payload")}
+		logger := &mocks.RecordingLogger{}
+		store := newTestStoreWithLogger(t, root, fetcher, logger)
+		key := newTestKey()
+
+		_, err := store.Ensure(context.Background(), key)
+
+		if err == nil {
+			t.Fatalf("Ensure: want error, got nil")
+		}
+		records := matchingRecords(logger, "Error", "pdf.store.failed")
+		var rec *mocks.LogRecord
+		for i := range records {
+			if cat, _ := records[i].Args["category"].(string); cat == "store" {
+				r := records[i]
+				rec = &r
+				break
+			}
+		}
+		if rec == nil {
+			t.Fatalf("want failed error record with category=store, got %v", logger.Records)
+		}
+		assertHasKeys(t, *rec, "source_type", "source_id", "category", "error")
+	})
+
+	t.Run("no log record carries response body bytes", func(t *testing.T) {
+		t.Parallel()
+
+		root := t.TempDir()
+		body := bytesFilled(512, 0x7e)
+		fetcher := &mocks.Fetcher{Body: body}
+		logger := &mocks.RecordingLogger{}
+		store := newTestStoreWithLogger(t, root, fetcher, logger)
+		key := newTestKey()
+
+		if _, err := store.Ensure(context.Background(), key); err != nil {
+			t.Fatalf("first Ensure: %v", err)
+		}
+		// Second call exercises the cache-hit path on the same logger.
+		if _, err := store.Ensure(context.Background(), key); err != nil {
+			t.Fatalf("second Ensure: %v", err)
+		}
+
+		assertNoBodyArg(t, logger, body)
+	})
+}
+
+// matchingRecords returns recorded entries with the given level and msg.
+func matchingRecords(l *mocks.RecordingLogger, level, msg string) []mocks.LogRecord {
+	var out []mocks.LogRecord
+	for _, r := range l.RecordsAt(level) {
+		if r.Msg == msg {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// assertHasKeys fails if rec.Args is missing any of the required keys.
+func assertHasKeys(t *testing.T, rec mocks.LogRecord, keys ...string) {
+	t.Helper()
+	for _, k := range keys {
+		if _, ok := rec.Args[k]; !ok {
+			t.Fatalf("record %q missing key %q (have %v)", rec.Msg, k, rec.Args)
+		}
+	}
+}
+
+// assertNoBodyArg fails if any captured arg value is the body byte slice or a
+// string containing a substring of the body. Defends Req 7.4: response body
+// bytes must never be passed to the logger.
+func assertNoBodyArg(t *testing.T, l *mocks.RecordingLogger, body []byte) {
+	t.Helper()
+	bodyStr := string(body)
+	probe := bodyStr
+	if len(probe) > 16 {
+		probe = probe[:16]
+	}
+	for _, r := range l.Records {
+		for k, v := range r.Args {
+			switch vv := v.(type) {
+			case []byte:
+				if string(vv) == bodyStr {
+					t.Fatalf("record %q arg %q carries body bytes", r.Msg, k)
+				}
+			case string:
+				if probe != "" && strings.Contains(vv, probe) {
+					t.Fatalf("record %q arg %q contains body substring", r.Msg, k)
+				}
+			}
+		}
+	}
+}
+
+// newTestStoreWithLogger wires fetcher and a caller-supplied RecordingLogger
+// so tests can assert on captured log records.
+func newTestStoreWithLogger(t *testing.T, root string, fetcher shared.Fetcher, logger *mocks.RecordingLogger) *localStore {
+	t.Helper()
+	store, err := NewStore(root, fetcher, logger)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	s, ok := store.(*localStore)
+	if !ok {
+		t.Fatalf("NewStore returned %T, want *localStore", store)
+	}
+	return s
+}
+
 // newTestKey returns a well-formed Key suitable for Ensure tests.
 func newTestKey() pdf.Key {
 	return pdf.Key{SourceType: "paper", SourceID: "2404.12345v1", URL: "https://example.invalid/p.pdf"}
