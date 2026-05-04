@@ -30,6 +30,7 @@ type Env struct {
 	MineruPath             string        `mapstructure:"MINERU_PATH"`
 	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
 	MineruTimeout          time.Duration `mapstructure:"-"`
+	PDFStoreRoot           string        `mapstructure:"PDF_STORE_ROOT"`
 }
 
 func LoadEnv() (*Env, error) {
@@ -51,6 +52,7 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("EXTRACTION_JOB_EXPIRY", "1h")
 	v.SetDefault("MINERU_PATH", "mineru")
 	v.SetDefault("MINERU_TIMEOUT", "10m")
+	v.SetDefault("PDF_STORE_ROOT", "data/pdfs")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
 	// observes it even when no .env file and no default exists. Without this,
@@ -70,6 +72,7 @@ func LoadEnv() (*Env, error) {
 		"EXTRACTION_JOB_EXPIRY",
 		"MINERU_PATH",
 		"MINERU_TIMEOUT",
+		"PDF_STORE_ROOT",
 	} {
 		_ = v.BindEnv(key)
 	}
@@ -129,7 +132,32 @@ func LoadEnv() (*Env, error) {
 	}
 	env.MineruTimeout = mineruTimeout
 
+	if err := validatePDFStoreRoot(env.PDFStoreRoot); err != nil {
+		return nil, err
+	}
+
 	return &env, nil
+}
+
+// validatePDFStoreRoot rejects obviously-broken values for PDF_STORE_ROOT
+// before NewApp tries to construct the rest of the App. The store
+// constructor owns directory creation and the writability probe; here we
+// only fail-fast on inputs that would never produce a usable store.
+func validatePDFStoreRoot(root string) error {
+	if strings.TrimSpace(root) == "" {
+		return fmt.Errorf("PDF_STORE_ROOT is required and must be a non-empty path")
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("PDF_STORE_ROOT %q cannot be inspected: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("PDF_STORE_ROOT %q exists but is not a directory", root)
+	}
+	return nil
 }
 
 func requirePositiveInt(name string, v int) error {

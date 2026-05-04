@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,10 +32,14 @@ import (
 // This test mutates process-wide env via t.Setenv; it cannot use t.Parallel.
 func TestNewApp_WiresArxivRoute(t *testing.T) {
 	setRequiredEnv(t)
-	t.Setenv("SQLITE_PATH", filepath.Join(t.TempDir(), "test.db"))
+	tmpDir := t.TempDir()
+	t.Setenv("SQLITE_PATH", filepath.Join(tmpDir, "test.db"))
 	// Leave ARXIV_BASE_URL unset so the env default applies.
 	t.Setenv("ARXIV_CATEGORIES", "cs.LG")
 	t.Setenv("ARXIV_MAX_RESULTS", "1")
+	// Redirect PDF_STORE_ROOT into the tempdir so NewApp does not create
+	// `data/pdfs/` in the test process's cwd as a side effect.
+	t.Setenv("PDF_STORE_ROOT", filepath.Join(tmpDir, "pdfs"))
 
 	env, err := LoadEnv()
 	if err != nil {
@@ -91,9 +96,11 @@ func TestNewApp_WiresArxivRoute(t *testing.T) {
 // This test mutates process-wide env via t.Setenv; it cannot use t.Parallel.
 func TestNewApp_WiresPaperRoutes(t *testing.T) {
 	setRequiredEnv(t)
-	t.Setenv("SQLITE_PATH", filepath.Join(t.TempDir(), "test.db"))
+	tmpDir := t.TempDir()
+	t.Setenv("SQLITE_PATH", filepath.Join(tmpDir, "test.db"))
 	t.Setenv("ARXIV_CATEGORIES", "cs.LG")
 	t.Setenv("ARXIV_MAX_RESULTS", "1")
+	t.Setenv("PDF_STORE_ROOT", filepath.Join(tmpDir, "pdfs"))
 
 	env, err := LoadEnv()
 	if err != nil {
@@ -239,6 +246,9 @@ func TestNewApp_ExtractionStartupRecovery(t *testing.T) {
 		ExtractionJobExpiry:    time.Hour,
 		MineruPath:             "/nonexistent/mineru",
 		MineruTimeout:          10 * time.Minute,
+		// PDF store root is required by the bootstrap composition root —
+		// pdflocal.NewStore fails fast if it cannot mkdir / write under root.
+		PDFStoreRoot: filepath.Join(tmpDir, "pdfs"),
 	}
 
 	// The app context is the worker's lifetime. Cancelling it after NewApp
@@ -312,6 +322,71 @@ func TestNewApp_ExtractionStartupRecovery(t *testing.T) {
 	if pendingRow.Status == domainextraction.JobStatusRunning {
 		t.Fatalf("pending row left in running after shutdown: %#v", pendingRow)
 	}
+}
+
+// TestNewApp_WiresPDFStore verifies that the bootstrap composition root
+// constructs the local PDF store from the configured root and threads it
+// through route.Deps so the follow-on document-extraction integration can
+// pick it up without another bootstrap edit. The store has no observable
+// HTTP surface in this spec; the assertion is the compile-time + filesystem
+// pair: NewApp returns without error AND the configured root exists on disk
+// as a directory after startup (proving pdflocal.NewStore actually ran).
+//
+// Requirements exercised: 5.1 (composition root constructs concretes once),
+// 5.2 (PDFStoreRoot is consumed at startup), 5.3 (misconfigured root would
+// surface as a startup error — covered here by the success path; the
+// failure path is covered by env_test's PDF_STORE_ROOT validation), 6.2
+// (store is reachable via the shared Deps surface).
+//
+// Constructs Env literally (no LoadEnv) so the test is hermetic and does
+// not race other tests over process-wide env. Cannot t.Parallel because
+// NewApp's gin.SetMode side effect, while gated to "prod", is shared
+// process state and the project convention has the bootstrap-level tests
+// run serially.
+func TestNewApp_WiresPDFStore(t *testing.T) {
+	t.Run("constructs PDF store from configured root and exposes it via Deps", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pdfRoot := filepath.Join(tmpDir, "pdfs")
+
+		env := &Env{
+			AppEnv:                 "test",
+			HTTPPort:               0,
+			APIToken:               "test-token",
+			SQLitePath:             filepath.Join(tmpDir, "test.db"),
+			ArxivBaseURL:           "http://localhost",
+			ArxivCategories:        []string{"q-fin.MF"},
+			ArxivMaxResults:        1,
+			ExtractionMaxWords:     50000,
+			ExtractionSignalBuffer: 10,
+			ExtractionJobExpiry:    time.Hour,
+			MineruPath:             "/nonexistent/mineru",
+			MineruTimeout:          10 * time.Minute,
+			PDFStoreRoot:           pdfRoot,
+		}
+
+		appCtx, cancelApp := context.WithCancel(context.Background())
+		t.Cleanup(cancelApp)
+
+		app, err := NewApp(appCtx, env)
+		if err != nil {
+			t.Fatalf("NewApp: %v", err)
+		}
+		t.Cleanup(func() {
+			cancelApp()
+			_ = app.Shutdown(context.Background())
+		})
+
+		// The local store mkdirs its root on construction. If pdflocal.NewStore
+		// did not run (or ran against a different value than env.PDFStoreRoot),
+		// this stat fails — pinning the env → store wiring observable.
+		info, err := os.Stat(pdfRoot)
+		if err != nil {
+			t.Fatalf("PDF_STORE_ROOT %q not created by NewApp: %v", pdfRoot, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("PDF_STORE_ROOT %q is not a directory after NewApp", pdfRoot)
+		}
+	})
 }
 
 // mustMarshalRequestPayload mirrors the persistence layer's JSON encoding so
