@@ -77,7 +77,7 @@
 
 - [ ] 4. Integration
 
-- [ ] 4.1 Wire the local store into the bootstrap composition root and Deps surface
+- [x] 4.1 Wire the local store into the bootstrap composition root and Deps surface
   - Construct the local store once at startup using the existing byte fetcher, the existing logger, and the new `PDFStoreRoot` config field. Surface the constructor error so a misconfigured root prevents startup.
   - Add the store to the shared `route.Deps` struct so that the future document-extraction integration can pick it up without another bootstrap edit. Leave it unused by any current route in this spec.
   - Confirm the dependency direction: domain/pdf imports stdlib + domain/shared only; infrastructure/pdf/local imports domain/pdf + domain/shared + infrastructure/httpclient symbol set; bootstrap is the only place concretes are instantiated.

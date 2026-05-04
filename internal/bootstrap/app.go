@@ -17,6 +17,7 @@ import (
 	mineruadapter "github.com/yoavweber/research-monitor/backend/internal/infrastructure/extraction/mineru"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
+	pdflocal "github.com/yoavweber/research-monitor/backend/internal/infrastructure/pdf/local"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
@@ -74,6 +75,16 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		"defi-monitor/1.0 (+https://github.com/yoavweber/research-monitor/backend)",
 	)
 	arxivFetcher := arxivinfra.NewArxivFetcher(env.ArxivBaseURL, byteFetcher)
+
+	// PDF artifact store: a fail-fast filesystem cache rooted at PDFStoreRoot.
+	// Constructed here so a misconfigured root (unwritable, points at a regular
+	// file, etc.) prevents process startup rather than surfacing on the first
+	// extraction request. No current router consumes the store; it is parked
+	// on route.Deps.PDF for the follow-on document-extraction integration.
+	pdfStore, err := pdflocal.NewStore(env.PDFStoreRoot, byteFetcher, logger)
+	if err != nil {
+		return nil, fmt.Errorf("pdf store: %w", err)
+	}
 	// Query is assembled once at startup so every request against this
 	// process sees the same validated category list and max_results.
 	query := paper.Query{
@@ -152,6 +163,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 			Query:   query,
 		},
 		Paper: route.PaperConfig{Repo: paperRepo},
+		PDF:   route.PDFConfig{Store: pdfStore},
 		Extraction: route.ExtractionConfig{
 			Repo:    extractionRepo,
 			UseCase: extractionUseCase,

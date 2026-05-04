@@ -7,6 +7,7 @@ import (
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
@@ -37,6 +38,16 @@ type ExtractionConfig struct {
 	Worker  *appextraction.Worker
 }
 
+// PDFConfig is the feature-scoped sub-bundle for the pdf-storage aggregate.
+// Bootstrap constructs the local store once at startup; no current router
+// consumes it. The follow-on document-extraction integration will read
+// PDFConfig.Store to materialize PDFs before invoking the extractor, which
+// is why the surface is wired now — adding it later would force a second
+// bootstrap edit purely to thread one field through Deps.
+type PDFConfig struct {
+	Store pdf.Store
+}
+
 // Deps are the shared dependencies passed to every per-resource router.
 // Per-resource routers construct their own repo → usecase → controller chains from these.
 type Deps struct {
@@ -46,6 +57,7 @@ type Deps struct {
 	Clock      shared.Clock
 	Arxiv      ArxivConfig
 	Paper      PaperConfig
+	PDF        PDFConfig
 	Extraction ExtractionConfig
 }
 
