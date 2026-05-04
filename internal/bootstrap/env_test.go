@@ -394,12 +394,10 @@ func TestLoadEnv_MineruPathEmptyRejected(t *testing.T) {
 
 // --- pdf store root config block -----------------------------------------
 //
-// Covers requirements 5.1 (env-driven storage root with default `data/pdfs`)
-// and 5.3 (fail-fast at startup when the configured root is not a directory
-// or is not writable). Env-side validation only inspects the path with Stat;
-// directory creation is owned by the store constructor (see design.md
-// "Components and Interfaces / bootstrap / env extension"), so a missing
-// path is accepted here and created lazily later.
+// Env-side validation only inspects the path with Stat. Directory creation
+// and the writability probe live in pdflocal.NewStore, so a missing path is
+// accepted here and created lazily later, and an unwritable existing
+// directory is caught downstream rather than re-checked twice on every boot.
 
 func TestLoadEnv_PDFStoreRootDefault(t *testing.T) {
 
@@ -478,31 +476,3 @@ func TestLoadEnv_PDFStoreRootRegularFileRejected(t *testing.T) {
 	})
 }
 
-func TestLoadEnv_PDFStoreRootUnwritableDirectoryRejected(t *testing.T) {
-
-	t.Run("existing directory without write permission fails fast and names PDF_STORE_ROOT", func(t *testing.T) {
-
-		if os.Geteuid() == 0 {
-			t.Skip("running as root bypasses unix permission checks")
-		}
-
-		setRequiredEnv(t)
-		dir := filepath.Join(t.TempDir(), "readonly")
-		if err := os.Mkdir(dir, 0o500); err != nil {
-			t.Fatalf("seed read-only directory: %v", err)
-		}
-		t.Cleanup(func() {
-			_ = os.Chmod(dir, 0o700)
-		})
-		t.Setenv("PDF_STORE_ROOT", dir)
-
-		_, err := LoadEnv()
-
-		if err == nil {
-			t.Fatal("LoadEnv returned nil error for read-only PDF_STORE_ROOT directory")
-		}
-		if !strings.Contains(err.Error(), "PDF_STORE_ROOT") {
-			t.Errorf("error %q does not mention PDF_STORE_ROOT", err.Error())
-		}
-	})
-}

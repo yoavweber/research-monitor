@@ -139,12 +139,10 @@ func LoadEnv() (*Env, error) {
 	return &env, nil
 }
 
-// validatePDFStoreRoot enforces the env-side half of the PDF storage root
-// contract: the directory is allowed to be missing (the store constructor
-// owns lazy creation) but must not point at an existing non-directory or an
-// existing directory that the process cannot write into. Any violation must
-// surface a startup error naming PDF_STORE_ROOT so the operator can locate
-// the misconfiguration without reading the implementation.
+// validatePDFStoreRoot rejects obviously-broken values for PDF_STORE_ROOT
+// before NewApp tries to construct the rest of the App. The store
+// constructor owns directory creation and the writability probe; here we
+// only fail-fast on inputs that would never produce a usable store.
 func validatePDFStoreRoot(root string) error {
 	if strings.TrimSpace(root) == "" {
 		return fmt.Errorf("PDF_STORE_ROOT is required and must be a non-empty path")
@@ -159,13 +157,6 @@ func validatePDFStoreRoot(root string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("PDF_STORE_ROOT %q exists but is not a directory", root)
 	}
-	probe, err := os.CreateTemp(root, ".pdf-store-root-probe-*")
-	if err != nil {
-		return fmt.Errorf("PDF_STORE_ROOT %q is not writable: %w", root, err)
-	}
-	probeName := probe.Name()
-	_ = probe.Close()
-	_ = os.Remove(probeName)
 	return nil
 }
 

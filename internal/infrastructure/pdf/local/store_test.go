@@ -461,7 +461,7 @@ func TestStoreEnsureLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Ensure: unexpected error: %v", err)
 		}
-		records := matchingRecords(logger, "Info", "pdf.store.cache_hit")
+		records := matchingRecords(logger, "Info", pdf.EventCacheHit)
 		if len(records) != 1 {
 			t.Fatalf("want exactly 1 cache_hit info record, got %d (all=%v)", len(records), logger.Records)
 		}
@@ -484,7 +484,7 @@ func TestStoreEnsureLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Ensure: unexpected error: %v", err)
 		}
-		records := matchingRecords(logger, "Info", "pdf.store.fetched")
+		records := matchingRecords(logger, "Info", pdf.EventFetched)
 		if len(records) != 1 {
 			t.Fatalf("want exactly 1 fetched info record, got %d (all=%v)", len(records), logger.Records)
 		}
@@ -518,10 +518,10 @@ func TestStoreEnsureLogging(t *testing.T) {
 		if err == nil {
 			t.Fatalf("Ensure: want error, got nil")
 		}
-		records := matchingRecords(logger, "Warn", "pdf.store.failed")
+		records := matchingRecords(logger, "Warn", pdf.EventFailed)
 		var fetchRec *mocks.LogRecord
 		for i := range records {
-			if cat, _ := records[i].Args["category"].(string); cat == "fetch" {
+			if cat, _ := records[i].Args["category"].(string); cat == pdf.CategoryFetch {
 				r := records[i]
 				fetchRec = &r
 				break
@@ -550,10 +550,10 @@ func TestStoreEnsureLogging(t *testing.T) {
 		if err == nil {
 			t.Fatalf("Ensure: want error, got nil")
 		}
-		records := matchingRecords(logger, "Warn", "pdf.store.failed")
+		records := matchingRecords(logger, "Warn", pdf.EventFailed)
 		var rec *mocks.LogRecord
 		for i := range records {
-			if cat, _ := records[i].Args["category"].(string); cat == "invalid_key" {
+			if cat, _ := records[i].Args["category"].(string); cat == pdf.CategoryInvalidKey {
 				r := records[i]
 				rec = &r
 				break
@@ -592,10 +592,10 @@ func TestStoreEnsureLogging(t *testing.T) {
 		if err == nil {
 			t.Fatalf("Ensure: want error, got nil")
 		}
-		records := matchingRecords(logger, "Error", "pdf.store.failed")
+		records := matchingRecords(logger, "Error", pdf.EventFailed)
 		var rec *mocks.LogRecord
 		for i := range records {
-			if cat, _ := records[i].Args["category"].(string); cat == "store" {
+			if cat, _ := records[i].Args["category"].(string); cat == pdf.CategoryStore {
 				r := records[i]
 				rec = &r
 				break
