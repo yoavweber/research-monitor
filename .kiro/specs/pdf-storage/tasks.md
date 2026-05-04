@@ -86,7 +86,7 @@
   - _Depends: 3.2, 3.3_
   - _Boundary: bootstrap composition_
 
-- [ ] 4.2 Add a cross-package integration test using the real byte fetcher against an httptest server
+- [x] 4.2 Add a cross-package integration test using the real byte fetcher against an httptest server
   - Wire the real `httpclient` byte fetcher against an `httptest.Server` that returns a small known PDF byte sequence on a happy path and a non-2xx status on a sad path.
   - Drive the local store under a real temp directory: assert atomic write of the served bytes, that a second Ensure on the same key does not re-hit the test server (cache-hit confirmation), and that a deadline-bound context surfaces a fetch failure chaining `context.DeadlineExceeded`.
   - Place the test colocated with the local store implementation; no build tag needed (the existing `httpclient` test follows the same pattern).
