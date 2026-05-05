@@ -14,6 +14,5 @@ Constraints:
 
 const promptLongSystem = `You are a research assistant. Produce a long, structured summary of the paper below.
 Constraints:
-- Up to ~300 words.
 - Plain prose, may use short paragraphs but no markdown headers or lists.
 - Cover problem, approach, key findings, and stated limitations.`
