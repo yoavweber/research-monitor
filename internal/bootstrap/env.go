@@ -31,6 +31,10 @@ type Env struct {
 	MineruTimeoutRaw       string        `mapstructure:"MINERU_TIMEOUT"`
 	MineruTimeout          time.Duration `mapstructure:"-"`
 	PDFStoreRoot           string        `mapstructure:"PDF_STORE_ROOT"`
+
+	// "anthropic" is reserved but rejected at startup until that adapter
+	// ships, so analyzer requests can never silently no-op.
+	LLMProvider string `mapstructure:"LLM_PROVIDER"`
 }
 
 func LoadEnv() (*Env, error) {
@@ -53,6 +57,7 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("MINERU_PATH", "mineru")
 	v.SetDefault("MINERU_TIMEOUT", "10m")
 	v.SetDefault("PDF_STORE_ROOT", "data/pdfs")
+	v.SetDefault("LLM_PROVIDER", "fake")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
 	// observes it even when no .env file and no default exists. Without this,
@@ -73,6 +78,7 @@ func LoadEnv() (*Env, error) {
 		"MINERU_PATH",
 		"MINERU_TIMEOUT",
 		"PDF_STORE_ROOT",
+		"LLM_PROVIDER",
 	} {
 		_ = v.BindEnv(key)
 	}
@@ -134,6 +140,14 @@ func LoadEnv() (*Env, error) {
 
 	if err := validatePDFStoreRoot(env.PDFStoreRoot); err != nil {
 		return nil, err
+	}
+
+	switch env.LLMProvider {
+	case "fake":
+	case "anthropic":
+		return nil, fmt.Errorf("LLM_PROVIDER=anthropic is reserved but not implemented yet; use \"fake\" until the Anthropic adapter ships")
+	default:
+		return nil, fmt.Errorf("LLM_PROVIDER must be one of [fake, anthropic] (got %q)", env.LLMProvider)
 	}
 
 	return &env, nil

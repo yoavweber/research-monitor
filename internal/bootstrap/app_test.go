@@ -249,6 +249,7 @@ func TestNewApp_ExtractionStartupRecovery(t *testing.T) {
 		// PDF store root is required by the bootstrap composition root —
 		// pdflocal.NewStore fails fast if it cannot mkdir / write under root.
 		PDFStoreRoot: filepath.Join(tmpDir, "pdfs"),
+		LLMProvider:  "fake",
 	}
 
 	// The app context is the worker's lifetime. Cancelling it after NewApp
@@ -362,6 +363,7 @@ func TestNewApp_WiresPDFStore(t *testing.T) {
 			MineruPath:             "/nonexistent/mineru",
 			MineruTimeout:          10 * time.Minute,
 			PDFStoreRoot:           pdfRoot,
+			LLMProvider:            "fake",
 		}
 
 		appCtx, cancelApp := context.WithCancel(context.Background())
