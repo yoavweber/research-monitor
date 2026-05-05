@@ -389,3 +389,63 @@ func TestLoadEnv_MineruPathEmptyRejected(t *testing.T) {
 		t.Errorf("error %q does not mention MINERU_PATH", err.Error())
 	}
 }
+
+// LLM_PROVIDER env switch. Default "fake"; "anthropic" reserved but
+// rejected until that adapter ships. These tests mutate process env via
+// t.Setenv so they run sequentially within this file.
+
+func TestLoadEnv_LLMProvider(t *testing.T) {
+	t.Run("defaults to fake when unset", func(t *testing.T) {
+		setRequiredEnv(t)
+
+		env, err := LoadEnv()
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.LLMProvider != "fake" {
+			t.Errorf("LLMProvider = %q, want %q", env.LLMProvider, "fake")
+		}
+	})
+
+	t.Run("accepts an explicit fake value", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("LLM_PROVIDER", "fake")
+
+		env, err := LoadEnv()
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.LLMProvider != "fake" {
+			t.Errorf("LLMProvider = %q, want %q", env.LLMProvider, "fake")
+		}
+	})
+
+	t.Run("rejects an unknown provider", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("LLM_PROVIDER", "openai")
+
+		_, err := LoadEnv()
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for unknown LLM_PROVIDER")
+		}
+		if !strings.Contains(err.Error(), "LLM_PROVIDER") {
+			t.Errorf("error %q does not mention LLM_PROVIDER", err.Error())
+		}
+	})
+
+	t.Run("rejects the reserved anthropic value with a not-implemented message", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("LLM_PROVIDER", "anthropic")
+
+		_, err := LoadEnv()
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for reserved LLM_PROVIDER=anthropic")
+		}
+		if !strings.Contains(err.Error(), "LLM_PROVIDER") {
+			t.Errorf("error %q does not mention LLM_PROVIDER", err.Error())
+		}
+		if !strings.Contains(err.Error(), "not implemented") {
+			t.Errorf("error %q should mention that the anthropic provider is not implemented yet", err.Error())
+		}
+	})
+}

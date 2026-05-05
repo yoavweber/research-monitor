@@ -1,0 +1,22 @@
+{
+  "feature_name": "llm-analyzer",
+  "created_at": "2026-05-02T18:01:37Z",
+  "updated_at": "2026-05-02T18:29:52Z",
+  "language": "en",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

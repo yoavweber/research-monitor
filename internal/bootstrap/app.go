@@ -10,14 +10,17 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 
+	appanalyzer "github.com/yoavweber/research-monitor/backend/internal/application/analyzer"
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	arxivinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
 	mineruadapter "github.com/yoavweber/research-monitor/backend/internal/infrastructure/extraction/mineru"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
+	llmstub "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
+	analyzerrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
 	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
@@ -141,6 +144,24 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 
 	extractionWorker.Start(ctx)
 
+	// LoadEnv validates LLMProvider at startup; this switch is one-arm by
+	// construction. The default arm is a defense against env-validation drift.
+	var llmClient shared.LLMClient
+	switch env.LLMProvider {
+	case "fake":
+		llmClient = llmstub.New()
+	default:
+		return nil, fmt.Errorf("bootstrap: LLM_PROVIDER=%q has no adapter wired", env.LLMProvider)
+	}
+	analyzerRepo := analyzerrepo.NewRepository(db)
+	analyzerUseCase := appanalyzer.NewAnalyzerUseCase(
+		analyzerRepo,
+		extractionRepo,
+		llmClient,
+		logger,
+		shared.SystemClock{},
+	)
+
 	api := engine.Group("/api", middleware.APIToken(env.APIToken))
 	route.Setup(route.Deps{
 		Group:  api,
@@ -157,6 +178,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 			UseCase: extractionUseCase,
 			Worker:  extractionWorker,
 		},
+		Analyzer: route.AnalyzerConfig{UseCase: analyzerUseCase},
 	})
 
 	return &App{
