@@ -8,6 +8,18 @@ Project memory for how Go tests are written in this backend. New tests must foll
 - Prefer real collaborators with a real (in-memory) database over hand-rolled fakes.
 - Keep cases isolated: every test calls `t.Parallel()` and owns its own DB.
 
+## When NOT to write a test
+
+Skip tests for code without logic. Tests should fail when behavior breaks — not exist for coverage's sake.
+
+No test for:
+- Plain field accessors / passthroughs (constructor that just stores args, getter that returns a field).
+- Trivial DTO conversions with no branching, no validation, no transformation.
+- Re-exports, type aliases, struct literals.
+- Generated code (swagger, mocks).
+
+If a piece of code is borderline (e.g., a one-line wrapper with one tiny precondition), **alert the user and ask before writing the test**. Do not write speculative tests "just in case." If the user accepts the gap, leave it untested.
+
 ## Naming
 
 Top-level test name describes the function under test. Behavior lives in subtest names, not in the top-level identifier.
@@ -22,6 +34,34 @@ func TestRepository_Save(t *testing.T) {
 - Top level: `TestType_Method` or `TestFunction` — what is under test.
 - Subtest: a sentence describing expected behavior, lowercase, no underscores.
 - Avoid flattening — even single-case tests use `t.Run` so future cases slot in cleanly.
+
+**This rule is mandatory, not a style preference.** Reviewer checklist:
+
+- [ ] Every test function has at least one `t.Run`.
+- [ ] No top-level test name encodes behavior with `_Underscore_Words` (e.g., `TestRepository_Upsert_OverwritePath_PreservesCreatedAt`). That belongs in a subtest sentence.
+- [ ] Behavior cases for the same method live as subtests of one parent, not separate top-level functions.
+
+Bad — top-level function carries the behavior, no subtest:
+```go
+func TestRepository_FindByID_Miss_ReturnsNotFound(t *testing.T) { /* ... */ }
+func TestRepository_FindByID_DBClosed_ReturnsUnavailable(t *testing.T) { /* ... */ }
+```
+
+Good — one parent, sentence subtests:
+```go
+func TestRepository_FindByID(t *testing.T) {
+    t.Run("returns ErrNotFound for unknown id", ...)
+    t.Run("wraps ErrCatalogueUnavailable when the DB is closed", ...)
+}
+```
+
+Equally bad — single `t.Run` whose name duplicates the function name:
+```go
+func TestLoadEnv_PDFStoreRootDefault(t *testing.T) {
+    t.Run("unset variable resolves to data/pdfs default", ...)
+}
+```
+Collapse these into one parent (`TestLoadEnv_PDFStoreRoot`) with sibling subtests.
 
 ## Structure (AAA)
 
