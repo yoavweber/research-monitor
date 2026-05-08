@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -126,7 +127,7 @@ func TestStore_Ensure_RealHTTPFetcher(t *testing.T) {
 		}
 
 		// No canonical file should exist on a fetch failure.
-		canonical := root + "/paper/integration-404.pdf"
+		canonical := filepath.Join(root, "paper", "integration-404.pdf")
 		if _, statErr := os.Stat(canonical); !errors.Is(statErr, fs.ErrNotExist) {
 			t.Fatalf("os.Stat(canonical) err = %v, want fs.ErrNotExist (no file should be created on fetch failure)", statErr)
 		}
@@ -181,7 +182,7 @@ func TestStore_Ensure_RealHTTPFetcher(t *testing.T) {
 			t.Fatalf("errors.Is(err, context.DeadlineExceeded) = false, want true; err = %v", err)
 		}
 
-		canonical := root + "/paper/integration-deadline.pdf"
+		canonical := filepath.Join(root, "paper", "integration-deadline.pdf")
 		if _, statErr := os.Stat(canonical); !errors.Is(statErr, fs.ErrNotExist) {
 			t.Fatalf("os.Stat(canonical) err = %v, want fs.ErrNotExist (no file should be created on deadline)", statErr)
 		}

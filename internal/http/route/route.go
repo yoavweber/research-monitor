@@ -39,12 +39,7 @@ type ExtractionConfig struct {
 	Worker  *appextraction.Worker
 }
 
-// PDFConfig is the feature-scoped sub-bundle for the pdf-storage aggregate.
-// Bootstrap constructs the local store once at startup; no current router
-// consumes it. The follow-on document-extraction integration will read
-// PDFConfig.Store to materialize PDFs before invoking the extractor, which
-// is why the surface is wired now — adding it later would force a second
-// bootstrap edit purely to thread one field through Deps.
+// PDFConfig carries the shared pdf.Store for routers that materialize PDFs.
 type PDFConfig struct {
 	Store pdf.Store
 }

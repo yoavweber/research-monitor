@@ -25,12 +25,16 @@ type localStore struct {
 	logger  shared.Logger
 }
 
-// NewStore constructs a filesystem-backed pdf.Store rooted at root.
-// Fail-fast at startup so a misconfigured root cannot surface mid-request:
-// the constructor creates the directory if missing, verifies it is a writable
-// directory, and returns an error joining pdf.ErrStore with the misconfigured
-// path on any violation.
+// NewStore constructs a filesystem-backed pdf.Store rooted at root. Resolves
+// root to an absolute path so Locator.Path() never depends on the caller's
+// cwd, and fail-fasts on a non-writable or non-directory root.
 func NewStore(root string, fetcher shared.Fetcher, logger shared.Logger) (pdf.Store, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: resolve root %q: %w", root, err))
+	}
+	root = abs
+
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, errors.Join(pdf.ErrStore, fmt.Errorf("pdf local store: mkdir root %q: %w", root, err))
 	}
@@ -117,6 +121,12 @@ func (s *localStore) Ensure(ctx context.Context, key pdf.Key) (pdf.Locator, erro
 	}
 	if len(body) == 0 {
 		return nil, s.failFetch(ctx, key, "fetch %s/%s: empty response body", key.SourceType, key.SourceID)
+	}
+
+	// Honor cancellation between fetch and publish so a cancelled caller does
+	// not get a published file from an in-flight Ensure.
+	if err := ctx.Err(); err != nil {
+		return nil, s.failStore(ctx, key, "cancelled before publish: %w", err)
 	}
 
 	// Same-directory temp ensures the rename is atomic; cross-device renames

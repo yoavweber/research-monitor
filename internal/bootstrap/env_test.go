@@ -392,17 +392,8 @@ func TestLoadEnv_MineruPathEmptyRejected(t *testing.T) {
 	}
 }
 
-// --- pdf store root config block -----------------------------------------
-//
-// Env-side validation only inspects the path with Stat. Directory creation
-// and the writability probe live in pdflocal.NewStore, so a missing path is
-// accepted here and created lazily later, and an unwritable existing
-// directory is caught downstream rather than re-checked twice on every boot.
-
-func TestLoadEnv_PDFStoreRootDefault(t *testing.T) {
-
+func TestLoadEnv_PDFStoreRoot(t *testing.T) {
 	t.Run("unset variable resolves to data/pdfs default", func(t *testing.T) {
-
 		setRequiredEnv(t)
 
 		env, err := LoadEnv()
@@ -414,12 +405,8 @@ func TestLoadEnv_PDFStoreRootDefault(t *testing.T) {
 			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, "data/pdfs")
 		}
 	})
-}
-
-func TestLoadEnv_PDFStoreRootExistingWritableDirectory(t *testing.T) {
 
 	t.Run("existing writable directory is accepted", func(t *testing.T) {
-
 		setRequiredEnv(t)
 		dir := t.TempDir()
 		t.Setenv("PDF_STORE_ROOT", dir)
@@ -433,12 +420,8 @@ func TestLoadEnv_PDFStoreRootExistingWritableDirectory(t *testing.T) {
 			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, dir)
 		}
 	})
-}
 
-func TestLoadEnv_PDFStoreRootMissingPathAccepted(t *testing.T) {
-
-	t.Run("path that does not exist is accepted because the store creates it lazily", func(t *testing.T) {
-
+	t.Run("missing path accepted because the store creates it lazily", func(t *testing.T) {
 		setRequiredEnv(t)
 		missing := filepath.Join(t.TempDir(), "not-yet-created")
 		t.Setenv("PDF_STORE_ROOT", missing)
@@ -452,12 +435,8 @@ func TestLoadEnv_PDFStoreRootMissingPathAccepted(t *testing.T) {
 			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, missing)
 		}
 	})
-}
-
-func TestLoadEnv_PDFStoreRootRegularFileRejected(t *testing.T) {
 
 	t.Run("regular file at the configured path fails fast and names PDF_STORE_ROOT", func(t *testing.T) {
-
 		setRequiredEnv(t)
 		regularFile := filepath.Join(t.TempDir(), "not-a-dir.pdf")
 		if err := os.WriteFile(regularFile, []byte("x"), 0o644); err != nil {

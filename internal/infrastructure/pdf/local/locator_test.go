@@ -15,22 +15,6 @@ import (
 func TestLocalLocator(t *testing.T) {
 	t.Parallel()
 
-	t.Run("path returns the configured path", func(t *testing.T) {
-		t.Parallel()
-
-		dir := t.TempDir()
-		path := filepath.Join(dir, "doc.pdf")
-		if err := os.WriteFile(path, []byte("ignored"), 0o644); err != nil {
-			t.Fatalf("seed write: %v", err)
-		}
-
-		loc := newLocator(path)
-
-		if got := loc.Path(); got != path {
-			t.Fatalf("Path() = %q, want %q", got, path)
-		}
-	})
-
 	t.Run("open returns the file bytes", func(t *testing.T) {
 		t.Parallel()
 
@@ -87,6 +71,29 @@ func TestLocalLocator(t *testing.T) {
 
 		if string(viaPath) != string(viaOpen) {
 			t.Fatalf("Path() bytes != Open() bytes (lens %d vs %d)", len(viaPath), len(viaOpen))
+		}
+	})
+
+	t.Run("open returns ctx error when ctx is already cancelled", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		path := filepath.Join(dir, "doc.pdf")
+		if err := os.WriteFile(path, []byte("present"), 0o644); err != nil {
+			t.Fatalf("seed write: %v", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		loc := newLocator(path)
+		r, err := loc.Open(ctx)
+
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Open err = %v, want errors.Is(err, context.Canceled)", err)
+		}
+		if r != nil {
+			r.Close()
+			t.Fatalf("Open returned non-nil reader on cancelled ctx")
 		}
 	})
 

@@ -9,10 +9,9 @@ import (
 // after that. Implementations live under internal/infrastructure/pdf/.
 type Store interface {
 	// Ensure returns a Locator for key's bytes. Idempotent and safe under
-	// concurrent calls for the same key.
-	//
-	// On error the Locator is unspecified. Errors wrap one of ErrInvalidKey,
-	// ErrFetch, ErrStore, or ctx.Err(). No partial file is left behind.
+	// concurrent calls for the same key. On error no partial file is left
+	// behind; callers identify the failure category with errors.Is against
+	// the package's exported sentinels.
 	Ensure(ctx context.Context, key Key) (Locator, error)
 }
 
@@ -24,6 +23,5 @@ type Locator interface {
 	Path() string
 
 	// Open returns a reader over the same bytes. Caller must Close.
-	// Errors wrap ErrStore or ctx.Err().
 	Open(ctx context.Context) (io.ReadCloser, error)
 }

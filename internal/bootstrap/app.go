@@ -79,11 +79,8 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	)
 	arxivFetcher := arxivinfra.NewArxivFetcher(env.ArxivBaseURL, byteFetcher)
 
-	// PDF artifact store: a fail-fast filesystem cache rooted at PDFStoreRoot.
-	// Constructed here so a misconfigured root (unwritable, points at a regular
-	// file, etc.) prevents process startup rather than surfacing on the first
-	// extraction request. No current router consumes the store; it is parked
-	// on route.Deps.PDF for the follow-on document-extraction integration.
+	// Constructed at startup so a misconfigured root fails the process,
+	// not the first request.
 	pdfStore, err := pdflocal.NewStore(env.PDFStoreRoot, byteFetcher, logger)
 	if err != nil {
 		return nil, fmt.Errorf("pdf store: %w", err)

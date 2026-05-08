@@ -15,30 +15,12 @@ import (
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
 
-// stubFetcher is a no-op shared.Fetcher used only to satisfy NewStore's
-// signature in tests that do not exercise fetch behaviour. Task 3.3 will
-// add tests that actually drive the fetcher.
-type stubFetcher struct{}
-
-func (stubFetcher) Fetch(ctx context.Context, url string) ([]byte, error) {
-	return nil, errors.New("stub fetcher should not be called in store constructor tests")
+// shouldNotFetch returns a *mocks.Fetcher pre-loaded with an error, used in
+// tests that should never reach the fetch path. If the store invokes it the
+// returned error fails the test loudly instead of silently writing nothing.
+func shouldNotFetch() *mocks.Fetcher {
+	return &mocks.Fetcher{Error: errors.New("fetcher should not be called in this test")}
 }
-
-// stubLogger is a no-op shared.Logger used only to satisfy NewStore's
-// signature; the constructor under test does not log.
-type stubLogger struct{}
-
-func (stubLogger) InfoContext(ctx context.Context, msg string, args ...any)  {}
-func (stubLogger) WarnContext(ctx context.Context, msg string, args ...any)  {}
-func (stubLogger) ErrorContext(ctx context.Context, msg string, args ...any) {}
-func (stubLogger) DebugContext(ctx context.Context, msg string, args ...any) {}
-func (stubLogger) With(args ...any) shared.Logger                            { return stubLogger{} }
-
-// compile-time conformance — surfaces port drift at build time.
-var (
-	_ shared.Fetcher = stubFetcher{}
-	_ shared.Logger  = stubLogger{}
-)
 
 func TestNewStore(t *testing.T) {
 	t.Parallel()
@@ -49,7 +31,7 @@ func TestNewStore(t *testing.T) {
 		parent := t.TempDir()
 		root := filepath.Join(parent, "pdfs")
 
-		store, err := NewStore(root, stubFetcher{}, stubLogger{})
+		store, err := NewStore(root, shouldNotFetch(), &mocks.RecordingLogger{})
 
 		if err != nil {
 			t.Fatalf("NewStore: unexpected error: %v", err)
@@ -71,7 +53,7 @@ func TestNewStore(t *testing.T) {
 
 		root := t.TempDir()
 
-		store, err := NewStore(root, stubFetcher{}, stubLogger{})
+		store, err := NewStore(root, shouldNotFetch(), &mocks.RecordingLogger{})
 
 		if err != nil {
 			t.Fatalf("NewStore: unexpected error for existing dir: %v", err)
@@ -90,7 +72,7 @@ func TestNewStore(t *testing.T) {
 			t.Fatalf("seed file: %v", err)
 		}
 
-		_, err := NewStore(filePath, stubFetcher{}, stubLogger{})
+		_, err := NewStore(filePath, shouldNotFetch(), &mocks.RecordingLogger{})
 
 		if err == nil {
 			t.Fatalf("NewStore: expected error for regular-file root, got nil")
@@ -120,7 +102,7 @@ func TestNewStore(t *testing.T) {
 		})
 		root := filepath.Join(parent, "pdfs")
 
-		_, err := NewStore(root, stubFetcher{}, stubLogger{})
+		_, err := NewStore(root, shouldNotFetch(), &mocks.RecordingLogger{})
 
 		if err == nil {
 			t.Fatalf("NewStore: expected error for non-writable parent, got nil")
@@ -767,7 +749,7 @@ func bytesFilled(n int, v byte) []byte {
 // helper (unexported) is reachable from tests.
 func newTestStore(t *testing.T, root string) *localStore {
 	t.Helper()
-	store, err := NewStore(root, stubFetcher{}, stubLogger{})
+	store, err := NewStore(root, shouldNotFetch(), &mocks.RecordingLogger{})
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

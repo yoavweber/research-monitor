@@ -113,7 +113,7 @@ Define `Store`/`Locator` as cross-cutting ports in `domain/shared/ports.go` (alo
    - All exported sentinels documented as "wraps the underlying cause; use `errors.Is` to inspect".
 5. **Logging contract**: three log lines — `pdf.store.fetched` (info, with `source_type`/`source_id`/byte count/duration), `pdf.store.cache_hit` (info), `pdf.store.failed` (warn, with category). No body bytes.
 6. **Concurrency note**: v1 has no in-process lock. Two concurrent `Ensure` calls for the same key will both fetch and both rename — the rename loser silently overwrites, the consumer still sees a valid complete file, byte-for-byte deterministic for the same URL. Document this as acceptable for the single-user system; if it ever matters, add a per-key `singleflight` later.
-7. **Test doubles strategy**: follow existing repo precedent — inline `fakeFetcher` in `store_test.go` (per `infrastructure/arxiv/fetcher_test.go:18-32`), `tests/mocks/logger.go` for the logger. Do **not** introduce a new `tests/mocks/fetcher.go` just for this spec.
+7. **Test doubles strategy**: shared `tests/mocks/Fetcher` and `tests/mocks/RecordingLogger`. Per the testing steering doc, hand-written doubles for non-DB collaborators live under `tests/mocks/` and are reused across packages — no inline fakes in `_test.go`.
 
 ### Research carried forward (for design phase)
 None required. All open questions are design choices listed above, not external unknowns.

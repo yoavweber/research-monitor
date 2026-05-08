@@ -98,7 +98,7 @@
 ## Implementation Notes
 
 - Pre-existing dirty file `internal/infrastructure/persistence/extraction/model.go` is unrelated user scratchpad work; selective staging excludes it from every pdf-storage commit. Future reviewer prompts should note this to avoid false-positive boundary rejections.
-- Env-vs-constructor validation split: env-side validates Stat + writability probe via `os.CreateTemp` (no `MkdirAll`); store constructor (Task 3.2) owns `MkdirAll`. Tests for env validation use `t.Setenv` and therefore correctly omit `t.Parallel()` per testing.md's process-global carve-out.
+- Env-vs-constructor validation split: env-side (`validatePDFStoreRoot`) only stats the path and checks that an existing entry is a directory; missing paths are accepted because the store creates them lazily. `MkdirAll` and the writability probe (via `os.CreateTemp`) live in the store constructor (Task 3.2). Tests for env validation use `t.Setenv` and therefore correctly omit `t.Parallel()` per testing.md's process-global carve-out.
 
 ## Deferred Requirements
 
