@@ -19,6 +19,7 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	llmstub "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
+	pdflocal "github.com/yoavweber/research-monitor/backend/internal/infrastructure/pdf/local"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	analyzerrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
 	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
@@ -77,6 +78,13 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		"defi-monitor/1.0 (+https://github.com/yoavweber/research-monitor/backend)",
 	)
 	arxivFetcher := arxivinfra.NewArxivFetcher(env.ArxivBaseURL, byteFetcher)
+
+	// Constructed at startup so a misconfigured root fails the process,
+	// not the first request.
+	pdfStore, err := pdflocal.NewStore(env.PDFStoreRoot, byteFetcher, logger)
+	if err != nil {
+		return nil, fmt.Errorf("pdf store: %w", err)
+	}
 	// Query is assembled once at startup so every request against this
 	// process sees the same validated category list and max_results.
 	query := paper.Query{
@@ -173,6 +181,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 			Query:   query,
 		},
 		Paper: route.PaperConfig{Repo: paperRepo},
+		PDF:   route.PDFConfig{Store: pdfStore},
 		Extraction: route.ExtractionConfig{
 			Repo:    extractionRepo,
 			UseCase: extractionUseCase,

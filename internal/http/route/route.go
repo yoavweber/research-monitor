@@ -8,6 +8,7 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
@@ -38,6 +39,11 @@ type ExtractionConfig struct {
 	Worker  *appextraction.Worker
 }
 
+// PDFConfig carries the shared pdf.Store for routers that materialize PDFs.
+type PDFConfig struct {
+	Store pdf.Store
+}
+
 // AnalyzerConfig is the feature-scoped sub-bundle for the llm-analyzer
 // aggregate. Bootstrap assembles it once at startup; AnalyzerRouter reads it
 // to register the controller. UseCase is the only port the router needs.
@@ -54,6 +60,7 @@ type Deps struct {
 	Clock      shared.Clock
 	Arxiv      ArxivConfig
 	Paper      PaperConfig
+	PDF        PDFConfig
 	Extraction ExtractionConfig
 	Analyzer   AnalyzerConfig
 }

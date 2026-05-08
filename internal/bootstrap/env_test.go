@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -388,6 +390,69 @@ func TestLoadEnv_MineruPathEmptyRejected(t *testing.T) {
 	if !strings.Contains(err.Error(), "MINERU_PATH") {
 		t.Errorf("error %q does not mention MINERU_PATH", err.Error())
 	}
+}
+
+func TestLoadEnv_PDFStoreRoot(t *testing.T) {
+	t.Run("unset variable resolves to data/pdfs default", func(t *testing.T) {
+		setRequiredEnv(t)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFStoreRoot != "data/pdfs" {
+			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, "data/pdfs")
+		}
+	})
+
+	t.Run("existing writable directory is accepted", func(t *testing.T) {
+		setRequiredEnv(t)
+		dir := t.TempDir()
+		t.Setenv("PDF_STORE_ROOT", dir)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFStoreRoot != dir {
+			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, dir)
+		}
+	})
+
+	t.Run("missing path accepted because the store creates it lazily", func(t *testing.T) {
+		setRequiredEnv(t)
+		missing := filepath.Join(t.TempDir(), "not-yet-created")
+		t.Setenv("PDF_STORE_ROOT", missing)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFStoreRoot != missing {
+			t.Errorf("PDFStoreRoot = %q, want %q", env.PDFStoreRoot, missing)
+		}
+	})
+
+	t.Run("regular file at the configured path fails fast and names PDF_STORE_ROOT", func(t *testing.T) {
+		setRequiredEnv(t)
+		regularFile := filepath.Join(t.TempDir(), "not-a-dir.pdf")
+		if err := os.WriteFile(regularFile, []byte("x"), 0o644); err != nil {
+			t.Fatalf("seed regular file: %v", err)
+		}
+		t.Setenv("PDF_STORE_ROOT", regularFile)
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for PDF_STORE_ROOT pointing at a regular file")
+		}
+		if !strings.Contains(err.Error(), "PDF_STORE_ROOT") {
+			t.Errorf("error %q does not mention PDF_STORE_ROOT", err.Error())
+		}
+	})
 }
 
 // LLM_PROVIDER env switch. Default "fake"; "anthropic" reserved but
