@@ -18,7 +18,7 @@
   - Observable completion: a unit test in the paper package round-trips a small slice of entries through paper.NewPDFDownloadRequests and asserts the resulting requests carry the expected PaperID and PDFURL, and the value objects are referenceable from outside the package
   - _Requirements: 1.1, 2.2, 3.1, 3.2, 3.3_
 
-- [ ] 1.3 Add the PDF-download ports and error sentinel on the paper aggregate
+- [x] 1.3 Add the PDF-download ports and error sentinel on the paper aggregate
   - Add paper.PDFScheduler with a SchedulePDFDownloads method that documents the non-cancellable contract (state mutation does not consult ctx; empty requests returns a zero snapshot and nil error; non-nil error only on registry shutdown)
   - Add paper.PDFDownloadReader with SnapshotPDFDownloadJob and SubscribePDFDownloadJob, documenting that Subscribe captures backlog and registers the subscriber atomically under the same per-job lock so every event is delivered through exactly one of backlog or live
   - Add paper.ErrDownloadJobUnknown sentinel for both Snapshot and Subscribe

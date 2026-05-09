@@ -31,3 +31,10 @@ var ErrInvalidID = errors.New("paper: invalid id")
 // non-identity validation (today: empty PDFURL). An invalid identity
 // surfaces as ErrInvalidID instead.
 var ErrInvalidPDFDownloadRequest = errors.New("paper: invalid pdf download request")
+
+// ErrDownloadJobUnknown signals that a DownloadJobID is unknown to the
+// PDFDownloadReader or has already been evicted past its retention
+// window. The HTTP controller wraps this into a *shared.HTTPError with
+// status 404 before returning so the existing error envelope middleware
+// handles status mapping.
+var ErrDownloadJobUnknown = errors.New("paper: download job unknown")

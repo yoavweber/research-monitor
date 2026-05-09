@@ -38,3 +38,45 @@ type Repository interface {
 	// paper.ErrCatalogueUnavailable.
 	List(ctx context.Context) ([]Entry, error)
 }
+
+// PDFScheduler is the write-side port for dispatching a batch of
+// PDF downloads. The implementation lives in application/pdfdownload.
+//
+// Contract:
+//   - SchedulePDFDownloads mutates registry state under the registry's
+//     own mutex and DOES NOT consult ctx for that mutation. Once it
+//     returns, the job is registered atomically and the worker has been
+//     launched on a registry-owned background context. A client cancel
+//     of ctx during the (very small) registration window cannot lose a
+//     scheduled job.
+//   - With an empty requests slice, the call returns a zero-value
+//     DownloadJobSnapshot and a nil error; no job is created.
+//   - On success the returned snapshot has Total set, Entries populated
+//     with one DownloadStatusPending result per request (in submission
+//     order), and Completed false.
+//   - The ctx parameter is preserved for tracing and to satisfy the
+//     project rule that context.Context is the first parameter of every
+//     port method, but it never short-circuits registration.
+//   - A non-nil error is returned only when the registry is shutting
+//     down; in that case no job is registered.
+type PDFScheduler interface {
+	SchedulePDFDownloads(ctx context.Context, requests []PDFDownloadRequest) (DownloadJobSnapshot, error)
+}
+
+// PDFDownloadReader is the read-side port consumed by HTTP controllers.
+//
+// Contract:
+//   - SnapshotPDFDownloadJob returns ErrDownloadJobUnknown when the job
+//     id is unknown or has been evicted past its retention window.
+//   - SubscribePDFDownloadJob captures the current event log into the
+//     returned backlog slice and registers the live channel atomically
+//     under the same per-job lock. Once it returns, every event
+//     produced by the worker is delivered through exactly one of
+//     backlog or live — never both, never neither.
+//   - The live channel is closed after the terminal Summary event is
+//     delivered, or when the subscriber is dropped under the
+//     slow-consumer policy enforced by the implementation.
+type PDFDownloadReader interface {
+	SnapshotPDFDownloadJob(ctx context.Context, id DownloadJobID) (DownloadJobSnapshot, error)
+	SubscribePDFDownloadJob(ctx context.Context, id DownloadJobID) (backlog []DownloadEvent, live <-chan DownloadEvent, err error)
+}
