@@ -25,7 +25,7 @@
   - Observable completion: package paper compiles, both ports are exported, and a build-time interface compliance check (var _ paper.PDFScheduler = (*tests/mocks.FakePDFScheduler)(nil) once the fake exists) is recorded in the test mocks file added later in 1.6
   - _Requirements: 1.1, 1.2, 2.1, 2.3, 3.5, 4.1, 4.5, 5.1, 5.3, 5.4, 6.3_
 
-- [ ] 1.4 Extend bootstrap configuration with retention and subscriber-buffer settings
+- [x] 1.4 Extend bootstrap configuration with retention and subscriber-buffer settings
   - Add PDFDownloadRetention (default 5 minutes) and PDFDownloadSubscriberBuffer (default 32) to the env struct with viper tags
   - Document the defaults in the env struct comments next to the field tags
   - Observable completion: env loads with defaults when the variables are unset and overrides them when they are set; an env unit test asserts both behaviors
