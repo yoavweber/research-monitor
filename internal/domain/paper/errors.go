@@ -26,3 +26,8 @@ var (
 // component. Construction does not enforce validity; callers invoke
 // (ID).Validate before using the ID to address artifacts.
 var ErrInvalidID = errors.New("paper: invalid id")
+
+// ErrInvalidPDFDownloadRequest signals that a PDFDownloadRequest failed
+// non-identity validation (today: empty PDFURL). An invalid identity
+// surfaces as ErrInvalidID instead.
+var ErrInvalidPDFDownloadRequest = errors.New("paper: invalid pdf download request")

@@ -11,7 +11,7 @@
   - Observable completion: package paper compiles, paper.NewID, paper.IDFromEntry, and (paper.ID).PDFArtifactKey are exported, and unit tests cover Validate (empty + path char rejection) and PDFArtifactKey (arXiv versioned + non-versioned cases)
   - _Requirements: 3.4_
 
-- [ ] 1.2 Add the PDF-download value objects on the paper aggregate
+- [x] 1.2 Add the PDF-download value objects on the paper aggregate
   - Add paper.PDFDownloadRequest carrying only PaperID and PDFURL with a Validate method that rejects empty PDFURL or invalid PaperID
   - Add paper.NewPDFDownloadRequests that maps a slice of entries (already filtered to IsNew == true by the caller) into the request slice; empty input returns an empty slice
   - Add paper.DownloadJobID, paper.DownloadEntryStatus enum (pending, success, failed), paper.DownloadEntryResult, paper.DownloadJobSnapshot, and the paper.DownloadEvent sum type with exactly one of Progress/Summary populated per emission
