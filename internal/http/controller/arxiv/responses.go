@@ -8,6 +8,7 @@ import (
 	"time"
 
 	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 )
 
 // FetchEnvelope is the schema-only wrapper for the 200 response of
@@ -19,10 +20,18 @@ type FetchEnvelope struct {
 
 // FetchResponse is the top-level wire shape for GET /api/arxiv/fetch. It is
 // always wrapped by the common.Envelope "data" field at the controller layer.
+//
+// Job is the initial snapshot of the PDF-download job that was scheduled
+// for the IsNew entries in this fetch. It is omitempty: when the fetch
+// produced no new entries, the field is omitted entirely so the response
+// shape is byte-identical to the pre-feature contract for empty fetches.
+// The field is populated by ToFetchResponse only after task 4.2 wires the
+// scheduler into the arxiv use case; until then it is always nil.
 type FetchResponse struct {
-	Entries   []EntryResponse `json:"entries"`
-	Count     int             `json:"count"`
-	FetchedAt time.Time       `json:"fetched_at"`
+	Entries   []EntryResponse                    `json:"entries"`
+	Count     int                                `json:"count"`
+	FetchedAt time.Time                          `json:"fetched_at"`
+	Job       *paperctrl.DownloadJobSnapshotDTO  `json:"job,omitempty"`
 }
 
 // EntryResponse is the per-paper wire shape. Field names are the canonical

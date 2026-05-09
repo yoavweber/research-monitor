@@ -31,7 +31,7 @@
   - Observable completion: env loads with defaults when the variables are unset and overrides them when they are set; an env unit test asserts both behaviors
   - _Requirements: 6.2_
 
-- [ ] 1.5 Add the swag DTO scaffolding for the new download surfaces
+- [x] 1.5 Add the swag DTO scaffolding for the new download surfaces
   - Define DTOs that mirror paper.DownloadJobSnapshot and paper.DownloadEntryResult for the download controller responses (status envelope, progress event, summary event)
   - Define an extension to the arxiv FetchResponse that carries the initial DownloadJobSnapshot under a job field with omitempty
   - Observable completion: the DTO files compile and are referenced by placeholder swag annotations on the existing arxiv controller (annotations will be filled in when the controller is modified in task 4.1); no behavior change yet
