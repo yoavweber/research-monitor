@@ -37,7 +37,7 @@
   - Observable completion: the DTO files compile and are referenced by placeholder swag annotations on the existing arxiv controller (annotations will be filled in when the controller is modified in task 4.1); no behavior change yet
   - _Requirements: 2.2, 5.1_
 
-- [ ] 1.6 (P) Add hand-written test doubles for paper.PDFScheduler and pdf.Store
+- [x] 1.6 (P) Add hand-written test doubles for paper.PDFScheduler and pdf.Store
   - Add a fake paper.PDFScheduler under tests/mocks that records calls and returns a configurable snapshot; assert interface compliance at construction time
   - Add a fake pdf.Store under tests/mocks (if not already present) that returns a programmable Locator-or-error per Key, with a hook for blocking sends used by the slow-subscriber test
   - Observable completion: both fakes compile, satisfy their target interfaces (verified via var _ assertions), and have a tiny self-test that demonstrates call recording
