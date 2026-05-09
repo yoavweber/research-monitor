@@ -4,7 +4,7 @@
 
 - [ ] 1. Domain, configuration, and test infrastructure setup
 
-- [ ] 1.1 Extend the paper aggregate with a stable identity value object
+- [x] 1.1 Extend the paper aggregate with a stable identity value object
   - Add a paper.ID value object that captures (Source, SourceID, Version) with a Validate method that rejects empty Source/SourceID and any path-traversal characters in identity components
   - Add free constructors paper.NewID and paper.IDFromEntry; do not add any method on Entry itself, preserving the existing "Entry carries no behavior" convention
   - Add a (paper.ID).PDFArtifactKey method that returns the source-scoped artifact identifier used as the SourceID of pdf.Key (for arXiv this concatenates SourceID and Version), so the worker and any future callers share one rule
