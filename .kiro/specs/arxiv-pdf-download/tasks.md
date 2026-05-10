@@ -57,7 +57,7 @@
   - _Requirements: 1.2, 2.1, 2.2, 2.3, 2.4, 3.5, 6.5_
   - _Boundary: application/pdfdownload_
 
-- [ ] 2.2 Implement the per-entry worker with Classifier and pdf.Store
+- [x] 2.2 Implement the per-entry worker with Classifier and pdf.Store
   - Add a classifier function that maps a returned error from pdf.Store.Ensure to (status, category, description) using pdf.ErrInvalidKey/ErrFetch/ErrStore and a default "unknown" bucket; description is sanitized to strip filesystem paths and credentials and trimmed to a fixed length suitable for SSE
   - Add a worker that iterates the scheduled requests sequentially, builds pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}, calls Store.Ensure on the registry's background context (NOT the request ctx), and appends a DownloadEntryResult under the per-job mutex
   - Place a one-line `// TODO: future retry/backoff seam` comment immediately above the Ensure call to mark the deferred policy seam

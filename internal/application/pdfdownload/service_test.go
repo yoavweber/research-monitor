@@ -3,12 +3,14 @@ package pdfdownload_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
 
@@ -235,6 +237,201 @@ func TestRegistry_StubReader(t *testing.T) {
 		}
 		if live != nil {
 			t.Errorf("live = %v, want nil", live)
+		}
+	})
+}
+
+// waitForJobCompletion polls the registry-internal completion flag for jobID
+// up to deadline. It surfaces a hard failure if the worker does not finish in
+// time so the suite cannot hang under regression.
+func waitForJobCompletion(t *testing.T, reg *pdfdownload.Registry, jobID paper.DownloadJobID, deadline time.Duration) {
+	t.Helper()
+	end := time.Now().Add(deadline)
+	for time.Now().Before(end) {
+		if reg.JobCompletedForTest(jobID) {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("worker for job %q did not finish within %s", jobID, deadline)
+}
+
+func TestRegistry_Worker(t *testing.T) {
+	t.Parallel()
+
+	t.Run("records a successful download with status success and a non-zero byte count", func(t *testing.T) {
+		t.Parallel()
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.00001", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/2404.00001v1.pdf",
+		}
+		key := pdf.Key{
+			SourceType: req.PaperID.Source,
+			SourceID:   req.PaperID.PDFArtifactKey(),
+			URL:        req.PDFURL,
+		}
+		body := []byte("hello-pdf-bytes")
+		store.Responses[key] = mocks.PDFStoreResponse{Body: body}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, snap.JobID, 2*time.Second)
+
+		entries := reg.JobEntriesForTest(snap.JobID)
+		if len(entries) != 1 {
+			t.Fatalf("entries len = %d, want 1", len(entries))
+		}
+		got := entries[0]
+		if got.Status != paper.DownloadStatusSuccess {
+			t.Errorf("status = %q, want %q", got.Status, paper.DownloadStatusSuccess)
+		}
+		if got.Bytes != len(body) {
+			t.Errorf("bytes = %d, want %d", got.Bytes, len(body))
+		}
+		if got.PaperID != req.PaperID {
+			t.Errorf("paper id = %v, want %v", got.PaperID, req.PaperID)
+		}
+		if got.Category != "" {
+			t.Errorf("category = %q, want empty on success", got.Category)
+		}
+
+		var found *mocks.LogRecord
+		for _, r := range logger.RecordsAt("Info") {
+			if r.Msg == "pdfdownload.entry.completed" {
+				found = &r
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("expected Info log pdfdownload.entry.completed; records=%+v", logger.Records)
+		}
+		if found.Args["status"] != string(paper.DownloadStatusSuccess) {
+			t.Errorf("log status = %v, want %q", found.Args["status"], paper.DownloadStatusSuccess)
+		}
+		if got := found.Args["job_id"]; got != string(snap.JobID) {
+			t.Errorf("log job_id = %v, want %v", got, snap.JobID)
+		}
+		if got := found.Args["bytes"]; got != len(body) {
+			t.Errorf("log bytes = %v, want %d", got, len(body))
+		}
+	})
+
+	t.Run("classifies an ErrFetch outcome as failed/fetch and keeps processing the next entry", func(t *testing.T) {
+		t.Parallel()
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		badReq := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.00001", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/2404.00001v1.pdf",
+		}
+		goodReq := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.00002", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/2404.00002v1.pdf",
+		}
+		badKey := pdf.Key{SourceType: badReq.PaperID.Source, SourceID: badReq.PaperID.PDFArtifactKey(), URL: badReq.PDFURL}
+		goodKey := pdf.Key{SourceType: goodReq.PaperID.Source, SourceID: goodReq.PaperID.PDFArtifactKey(), URL: goodReq.PDFURL}
+		store.Responses[badKey] = mocks.PDFStoreResponse{Err: fmt.Errorf("upstream 500: %w", pdf.ErrFetch)}
+		goodBody := []byte("ok-bytes-456")
+		store.Responses[goodKey] = mocks.PDFStoreResponse{Body: goodBody}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{badReq, goodReq})
+
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, snap.JobID, 2*time.Second)
+
+		entries := reg.JobEntriesForTest(snap.JobID)
+		if len(entries) != 2 {
+			t.Fatalf("entries len = %d, want 2", len(entries))
+		}
+		if entries[0].Status != paper.DownloadStatusFailed {
+			t.Errorf("entries[0].Status = %q, want %q", entries[0].Status, paper.DownloadStatusFailed)
+		}
+		if entries[0].Category != pdf.CategoryFetch {
+			t.Errorf("entries[0].Category = %q, want %q", entries[0].Category, pdf.CategoryFetch)
+		}
+		if entries[0].Description == "" {
+			t.Errorf("entries[0].Description must not be empty on failure")
+		}
+		if entries[1].Status != paper.DownloadStatusSuccess {
+			t.Errorf("entries[1].Status = %q, want %q (loop must continue past failure)", entries[1].Status, paper.DownloadStatusSuccess)
+		}
+		if entries[1].Bytes != len(goodBody) {
+			t.Errorf("entries[1].Bytes = %d, want %d", entries[1].Bytes, len(goodBody))
+		}
+
+		var warn *mocks.LogRecord
+		for _, r := range logger.RecordsAt("Warn") {
+			if r.Msg == "pdfdownload.entry.completed" {
+				warn = &r
+				break
+			}
+		}
+		if warn == nil {
+			t.Fatalf("expected Warn log pdfdownload.entry.completed; records=%+v", logger.Records)
+		}
+		if warn.Args["category"] != pdf.CategoryFetch {
+			t.Errorf("log category = %v, want %q", warn.Args["category"], pdf.CategoryFetch)
+		}
+	})
+
+	t.Run("runs to completion even when the caller ctx is cancelled before the worker starts", func(t *testing.T) {
+		t.Parallel()
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.00003", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/2404.00003v1.pdf",
+		}
+		key := pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}
+		body := []byte("payload-xyz")
+		store.Responses[key] = mocks.PDFStoreResponse{Body: body}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		snap, err := reg.SchedulePDFDownloads(ctx, []paper.PDFDownloadRequest{req})
+
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, snap.JobID, 2*time.Second)
+
+		entries := reg.JobEntriesForTest(snap.JobID)
+		if len(entries) != 1 {
+			t.Fatalf("entries len = %d, want 1", len(entries))
+		}
+		if entries[0].Status != paper.DownloadStatusSuccess {
+			t.Errorf("status = %q, want %q (worker must ignore caller ctx)", entries[0].Status, paper.DownloadStatusSuccess)
+		}
+		if entries[0].Bytes != len(body) {
+			t.Errorf("bytes = %d, want %d", entries[0].Bytes, len(body))
 		}
 	})
 }

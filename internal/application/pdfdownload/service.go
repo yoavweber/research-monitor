@@ -51,14 +51,23 @@ type Options struct {
 // workers yet, so it cancels and returns nil.
 type ShutdownFunc func(ctx context.Context) error
 
-// job is the internal per-job record. The current task only populates
-// id, total, and entries (all Pending) under registryMu. Subsequent
-// tasks add the per-job mutex, the event log, the subscribers slice,
-// and the completion bookkeeping.
+// job is the internal per-job record. Task 2.1 populated id, total, and
+// entries (all Pending). Task 2.2 added the request slice the worker
+// iterates, a per-job mutex guarding entry appends, and a completion
+// flag flipped after the worker drains the request loop. Tasks 2.3 and
+// 2.4 will add the event log and subscribers slice.
 type job struct {
-	id      paper.DownloadJobID
-	total   int
-	entries []paper.DownloadEntryResult
+	id       paper.DownloadJobID
+	total    int
+	requests []paper.PDFDownloadRequest
+
+	// mu guards entries and completed. The registry mutex serialises
+	// jobs map lookups; this mutex serialises per-entry appends so the
+	// worker and future fan-out can hold a narrow lock without
+	// contending on the global registry lock.
+	mu        sync.Mutex
+	entries   []paper.DownloadEntryResult
+	completed bool
 }
 
 // Registry is the in-memory implementation of paper.PDFScheduler and
@@ -80,6 +89,11 @@ type Registry struct {
 
 	// shutdownOnce makes ShutdownFunc safe to call repeatedly.
 	shutdownOnce sync.Once
+
+	// workers tracks in-flight job goroutines so ShutdownFunc can wait
+	// for them to finish (task 2.2 launches the workers; later tasks
+	// may extend the drain semantics in coordination with bgCancel).
+	workers sync.WaitGroup
 
 	// registryMu guards jobs. A single mutex is the design's invariant:
 	// Schedule mutates atomically, and read paths (added in 2.4) sweep
@@ -106,11 +120,22 @@ func NewRegistry(
 		bgCancel: cancel,
 		jobs:     make(map[paper.DownloadJobID]*job),
 	}
-	shutdown := func(_ context.Context) error {
+	shutdown := func(ctx context.Context) error {
 		r.shutdownOnce.Do(func() {
 			r.bgCancel()
-			// Worker drain (added in task 2.2) will go here, bounded
-			// by the ctx argument.
+			// Bound the drain by ctx so a shutdown caller can cap how
+			// long it is willing to wait for in-flight workers. v1
+			// workers ignore ctx (R3.5) so we cannot interrupt them;
+			// the deadline still releases the caller.
+			done := make(chan struct{})
+			go func() {
+				r.workers.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-ctx.Done():
+			}
 		})
 		return nil
 	}
@@ -138,10 +163,18 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 		paperIDs = append(paperIDs, formatPaperID(req.PaperID))
 	}
 
+	// Copy requests onto the job so the worker iterates a stable slice
+	// independent of the caller's backing array. The worker reads
+	// requests without taking j.mu (it is set once here and never
+	// mutated again).
+	jobRequests := make([]paper.PDFDownloadRequest, len(requests))
+	copy(jobRequests, requests)
+
 	j := &job{
-		id:      id,
-		total:   len(requests),
-		entries: entries,
+		id:       id,
+		total:    len(requests),
+		requests: jobRequests,
+		entries:  entries,
 	}
 
 	r.registryMu.Lock()
@@ -149,7 +182,7 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 	// Snapshot under the registry mutex so the returned value is
 	// derived from the same state we just installed; entries is copied
 	// to insulate the caller from any later in-place mutation by the
-	// worker (added in task 2.2).
+	// worker.
 	snap := snapshotForJob(j)
 	r.registryMu.Unlock()
 
@@ -158,6 +191,9 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 		"total", len(requests),
 		"paper_ids", paperIDs,
 	)
+
+	r.workers.Add(1)
+	go r.runJob(j)
 
 	return snap, nil
 }
@@ -179,10 +215,13 @@ func (r *Registry) SubscribePDFDownloadJob(_ context.Context, _ paper.DownloadJo
 
 // snapshotForJob projects a job into the public snapshot shape. Lives
 // here (not on *job) so the projection is testable from package code
-// and so tasks 2.2/2.3 can reuse it once they add succeeded/failed
-// counters and the completion flag. For 2.1 every entry is Pending,
-// so all derived counters are zero and Completed is false.
+// and so task 2.3 can reuse it once it adds the completion flag fan
+// out. The function acquires j.mu while reading entries so it is safe
+// to call while the worker is appending; succeeded/failed counters and
+// the completion flag arrive in tasks 2.3/2.4.
 func snapshotForJob(j *job) paper.DownloadJobSnapshot {
+	j.mu.Lock()
+	defer j.mu.Unlock()
 	entries := make([]paper.DownloadEntryResult, len(j.entries))
 	copy(entries, j.entries)
 	return paper.DownloadJobSnapshot{
