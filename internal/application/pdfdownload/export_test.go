@@ -34,3 +34,44 @@ func (r *Registry) JobEntriesForTest(jobID paper.DownloadJobID) []paper.Download
 	copy(out, j.entries)
 	return out
 }
+
+// JobEventsForTest returns a copy of the event log recorded so far. Used
+// by 2.3 tests to assert the events log shape (Progress per entry + final
+// Summary) before the public Subscribe contract lands in 2.4.
+func (r *Registry) JobEventsForTest(jobID paper.DownloadJobID) []paper.DownloadEvent {
+	r.registryMu.Lock()
+	j, ok := r.jobs[jobID]
+	r.registryMu.Unlock()
+	if !ok {
+		return nil
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	out := make([]paper.DownloadEvent, len(j.events))
+	copy(out, j.events)
+	return out
+}
+
+// AttachTestSubscriberForJob registers a buffered channel as a subscriber
+// of jobID under the per-job mutex and returns the channel for the test
+// to read from. Mirrors the locking discipline that task 2.4's public
+// SubscribePDFDownloadJob will use, without yet exposing the public
+// (backlog, live) shape. Returns paper.ErrDownloadJobUnknown if the job
+// is not present.
+//
+// The buffer size is supplied explicitly so the slow-subscriber test can
+// force overflow with a small value, independent of the registry's
+// configured SubscriberBuffer.
+func (r *Registry) AttachTestSubscriberForJob(jobID paper.DownloadJobID, bufSize int) (chan paper.DownloadEvent, error) {
+	r.registryMu.Lock()
+	j, ok := r.jobs[jobID]
+	r.registryMu.Unlock()
+	if !ok {
+		return nil, paper.ErrDownloadJobUnknown
+	}
+	ch := make(chan paper.DownloadEvent, bufSize)
+	j.mu.Lock()
+	j.subscribers = append(j.subscribers, ch)
+	j.mu.Unlock()
+	return ch, nil
+}

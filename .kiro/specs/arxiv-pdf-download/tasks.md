@@ -66,7 +66,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   - _Boundary: application/pdfdownload_
 
-- [ ] 2.3 Add fan-out, completion, and slow-subscriber handling
+- [x] 2.3 Add fan-out, completion, and slow-subscriber handling
   - Maintain an events []DownloadEvent log per job (bounded by total + 1) plus a subscribers slice of buffered channels of size SubscriberBuffer
   - Append every DownloadEntryResult to the event log under the per-job mutex and fan out a Progress event to each subscriber using a non-blocking send: select { case ch <- ev: default: close(ch); drop sub; emit pdfdownload.subscriber.dropped at Warn }
   - When all entries are processed, build the final DownloadJobSnapshot, append a Summary event, set completed=true and completedAt=clock.Now(), close every remaining subscriber channel, and emit pdfdownload.job.completed with totals and duration_ms

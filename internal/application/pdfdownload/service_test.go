@@ -47,6 +47,29 @@ func formatPaperID(id paper.ID) string {
 	return id.Source + ":" + id.SourceID + id.Version
 }
 
+// gatedStore wraps a mocks.PDFStore with a release channel: Ensure blocks
+// until the channel is closed (or the caller's ctx is cancelled). It lets
+// fan-out tests attach a subscriber after Schedule but before the worker
+// emits any event, without depending on the registry's internal
+// sequencing.
+type gatedStore struct {
+	inner   pdf.Store
+	release <-chan struct{}
+}
+
+func newGatedStore(inner pdf.Store, release <-chan struct{}) *gatedStore {
+	return &gatedStore{inner: inner, release: release}
+}
+
+func (g *gatedStore) Ensure(ctx context.Context, key pdf.Key) (pdf.Locator, error) {
+	select {
+	case <-g.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return g.inner.Ensure(ctx, key)
+}
+
 func sampleRequests(n int) []paper.PDFDownloadRequest {
 	out := make([]paper.PDFDownloadRequest, 0, n)
 	for i := 0; i < n; i++ {
@@ -432,6 +455,272 @@ func TestRegistry_Worker(t *testing.T) {
 		}
 		if entries[0].Bytes != len(body) {
 			t.Errorf("bytes = %d, want %d", entries[0].Bytes, len(body))
+		}
+	})
+}
+
+// drainEvents reads events from ch until it is closed or deadline expires.
+// Returns the events received in order and ok=true if the channel closed
+// before deadline; ok=false means the deadline tripped (test should fail).
+func drainEvents(ch <-chan paper.DownloadEvent, deadline time.Duration) ([]paper.DownloadEvent, bool) {
+	var out []paper.DownloadEvent
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return out, true
+			}
+			out = append(out, ev)
+		case <-timer.C:
+			return out, false
+		}
+	}
+}
+
+func TestRegistry_FanOut(t *testing.T) {
+	t.Parallel()
+
+	t.Run("draining subscriber receives every progress event followed by summary and channel close", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		startedAt := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		clock := mocks.NewMovableClock(startedAt)
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		const n = 3
+		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		for i := 0; i < n; i++ {
+			req := paper.PDFDownloadRequest{
+				PaperID: paper.NewID("arxiv", "2404.0fan0"+string(rune('1'+i)), "v1"),
+				PDFURL:  "https://arxiv.org/pdf/fanout-" + string(rune('1'+i)) + ".pdf",
+			}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
+			reqs = append(reqs, req)
+		}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		ch, err := reg.AttachTestSubscriberForJob(snap.JobID, 16)
+		if err != nil {
+			t.Fatalf("AttachTestSubscriberForJob: %v", err)
+		}
+		close(release)
+
+		events, closed := drainEvents(ch, 2*time.Second)
+		if !closed {
+			t.Fatalf("subscriber channel did not close within deadline; got %d events", len(events))
+		}
+		if len(events) != n+1 {
+			t.Fatalf("event count = %d, want %d (n progress + 1 summary)", len(events), n+1)
+		}
+		for i := 0; i < n; i++ {
+			if events[i].Progress == nil {
+				t.Errorf("events[%d].Progress = nil, want non-nil", i)
+			}
+			if events[i].Summary != nil {
+				t.Errorf("events[%d].Summary = non-nil, want nil", i)
+			}
+		}
+		last := events[n]
+		if last.Summary == nil {
+			t.Fatalf("last event.Summary = nil, want non-nil")
+		}
+		if last.Progress != nil {
+			t.Errorf("last event.Progress = non-nil, want nil on terminal Summary")
+		}
+		if last.Summary.JobID != snap.JobID {
+			t.Errorf("summary JobID = %q, want %q", last.Summary.JobID, snap.JobID)
+		}
+		if last.Summary.Total != n {
+			t.Errorf("summary Total = %d, want %d", last.Summary.Total, n)
+		}
+		if last.Summary.Succeeded != n {
+			t.Errorf("summary Succeeded = %d, want %d", last.Summary.Succeeded, n)
+		}
+		if last.Summary.Failed != 0 {
+			t.Errorf("summary Failed = %d, want 0", last.Summary.Failed)
+		}
+		if !last.Summary.Completed {
+			t.Errorf("summary Completed = false, want true")
+		}
+
+		// Events log is bounded by total+1 and must match what the subscriber saw.
+		log := reg.JobEventsForTest(snap.JobID)
+		if len(log) != n+1 {
+			t.Errorf("events log len = %d, want %d", len(log), n+1)
+		}
+
+		var completedLog *mocks.LogRecord
+		for _, r := range logger.RecordsAt("Info") {
+			if r.Msg == "pdfdownload.job.completed" {
+				rec := r
+				completedLog = &rec
+				break
+			}
+		}
+		if completedLog == nil {
+			t.Fatalf("expected Info log pdfdownload.job.completed; records=%+v", logger.Records)
+		}
+		if completedLog.Args["job_id"] != string(snap.JobID) {
+			t.Errorf("completed log job_id = %v, want %v", completedLog.Args["job_id"], snap.JobID)
+		}
+		if completedLog.Args["total"] != n {
+			t.Errorf("completed log total = %v, want %d", completedLog.Args["total"], n)
+		}
+		if completedLog.Args["succeeded"] != n {
+			t.Errorf("completed log succeeded = %v, want %d", completedLog.Args["succeeded"], n)
+		}
+		if completedLog.Args["failed"] != 0 {
+			t.Errorf("completed log failed = %v, want 0", completedLog.Args["failed"])
+		}
+		if _, ok := completedLog.Args["duration_ms"]; !ok {
+			t.Errorf("completed log missing duration_ms; args=%+v", completedLog.Args)
+		}
+	})
+
+	t.Run("slow subscriber whose channel overflows is dropped without stalling the worker", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		// SubscriberBuffer here covers the public Subscribe contract that
+		// task 2.4 will wire; the test-only AttachTestSubscriberForJob
+		// takes an explicit small bufSize to drive the overflow path.
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		const n = 5
+		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		for i := 0; i < n; i++ {
+			req := paper.PDFDownloadRequest{
+				PaperID: paper.NewID("arxiv", "2404.0slow0"+string(rune('1'+i)), "v1"),
+				PDFURL:  "https://arxiv.org/pdf/slow-" + string(rune('1'+i)) + ".pdf",
+			}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("payload")}
+			reqs = append(reqs, req)
+		}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		// Tiny buffer (1) guarantees the second progress event hits the
+		// non-blocking-send default branch, dropping the subscriber.
+		slow, err := reg.AttachTestSubscriberForJob(snap.JobID, 1)
+		if err != nil {
+			t.Fatalf("AttachTestSubscriberForJob: %v", err)
+		}
+		close(release)
+
+		// The slow subscriber never reads. The worker must still complete.
+		waitForJobCompletion(t, reg, snap.JobID, 2*time.Second)
+
+		// After being dropped, the channel is closed. The first send filled the
+		// buffer, so we expect to read exactly one buffered event followed by close.
+		read, closed := drainEvents(slow, 1*time.Second)
+		if !closed {
+			t.Fatalf("slow subscriber channel did not close; read %d events", len(read))
+		}
+		if len(read) > 1 {
+			t.Errorf("slow subscriber received %d events, want at most 1 before drop", len(read))
+		}
+
+		var dropLog *mocks.LogRecord
+		for _, r := range logger.RecordsAt("Warn") {
+			if r.Msg == "pdfdownload.subscriber.dropped" {
+				rec := r
+				dropLog = &rec
+				break
+			}
+		}
+		if dropLog == nil {
+			t.Fatalf("expected Warn log pdfdownload.subscriber.dropped; records=%+v", logger.Records)
+		}
+		if dropLog.Args["job_id"] != string(snap.JobID) {
+			t.Errorf("drop log job_id = %v, want %v", dropLog.Args["job_id"], snap.JobID)
+		}
+		if dropLog.Args["reason"] != "slow_consumer" {
+			t.Errorf("drop log reason = %v, want %q", dropLog.Args["reason"], "slow_consumer")
+		}
+	})
+
+	t.Run("summary still emits when every entry fails", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		const n = 3
+		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		for i := 0; i < n; i++ {
+			req := paper.PDFDownloadRequest{
+				PaperID: paper.NewID("arxiv", "2404.0fail0"+string(rune('1'+i)), "v1"),
+				PDFURL:  "https://arxiv.org/pdf/fail-" + string(rune('1'+i)) + ".pdf",
+			}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Err: fmt.Errorf("upstream 503: %w", pdf.ErrFetch)}
+			reqs = append(reqs, req)
+		}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		ch, err := reg.AttachTestSubscriberForJob(snap.JobID, 16)
+		if err != nil {
+			t.Fatalf("AttachTestSubscriberForJob: %v", err)
+		}
+		close(release)
+
+		events, closed := drainEvents(ch, 2*time.Second)
+		if !closed {
+			t.Fatalf("subscriber channel did not close; got %d events", len(events))
+		}
+		if len(events) != n+1 {
+			t.Fatalf("event count = %d, want %d", len(events), n+1)
+		}
+		summary := events[n].Summary
+		if summary == nil {
+			t.Fatalf("expected terminal Summary event, got Progress")
+		}
+		if summary.Total != n {
+			t.Errorf("summary Total = %d, want %d", summary.Total, n)
+		}
+		if summary.Succeeded != 0 {
+			t.Errorf("summary Succeeded = %d, want 0", summary.Succeeded)
+		}
+		if summary.Failed != n {
+			t.Errorf("summary Failed = %d, want %d", summary.Failed, n)
+		}
+		if !summary.Completed {
+			t.Errorf("summary Completed = false, want true")
 		}
 	})
 }

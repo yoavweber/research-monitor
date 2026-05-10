@@ -53,21 +53,26 @@ type ShutdownFunc func(ctx context.Context) error
 
 // job is the internal per-job record. Task 2.1 populated id, total, and
 // entries (all Pending). Task 2.2 added the request slice the worker
-// iterates, a per-job mutex guarding entry appends, and a completion
-// flag flipped after the worker drains the request loop. Tasks 2.3 and
-// 2.4 will add the event log and subscribers slice.
+// iterates and a completion flag flipped after the worker drains the
+// request loop. Task 2.3 added the bounded event log (total+1: one
+// Progress per entry plus the terminal Summary) and the subscribers
+// slice that the worker fans out to under j.mu.
 type job struct {
 	id       paper.DownloadJobID
 	total    int
 	requests []paper.PDFDownloadRequest
 
-	// mu guards entries and completed. The registry mutex serialises
-	// jobs map lookups; this mutex serialises per-entry appends so the
-	// worker and future fan-out can hold a narrow lock without
-	// contending on the global registry lock.
-	mu        sync.Mutex
-	entries   []paper.DownloadEntryResult
-	completed bool
+	// mu guards entries, events, subscribers, completed, startedAt, and
+	// completedAt. The registry mutex serialises jobs map lookups; this
+	// mutex serialises per-entry appends and fan-out so a slow consumer
+	// cannot block other jobs via the global registry lock.
+	mu          sync.Mutex
+	entries     []paper.DownloadEntryResult
+	events      []paper.DownloadEvent
+	subscribers []chan paper.DownloadEvent
+	startedAt   time.Time
+	completed   bool
+	completedAt time.Time
 }
 
 // Registry is the in-memory implementation of paper.PDFScheduler and
@@ -175,6 +180,10 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 		total:    len(requests),
 		requests: jobRequests,
 		entries:  entries,
+		// Capacity is exactly total+1: one Progress per entry plus the
+		// terminal Summary. No more appends ever happen after Summary, so
+		// the slice never grows past this bound (R4.* invariant).
+		events: make([]paper.DownloadEvent, 0, len(requests)+1),
 	}
 
 	r.registryMu.Lock()
