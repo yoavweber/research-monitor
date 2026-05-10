@@ -48,7 +48,7 @@
 
 - [ ] 2. PDF-download orchestration in application/pdfdownload
 
-- [ ] 2.1 Build the registry skeleton with Schedule and lifecycle logging
+- [x] 2.1 Build the registry skeleton with Schedule and lifecycle logging
   - Implement an unexported registry struct keyed by paper.DownloadJobID with a single mutex guarding the jobs map, a registry-owned background context with cancel, and a NewRegistry constructor returning the concrete registry plus a ShutdownFunc
   - Implement SchedulePDFDownloads so that registration mutates state without consulting the passed ctx and returns the initial snapshot (Total set, all Entries Pending, Completed=false) atomically; empty requests short-circuits with a zero snapshot
   - Emit pdfdownload.job.scheduled at Info with job_id, total, paper_ids on the shared logger
