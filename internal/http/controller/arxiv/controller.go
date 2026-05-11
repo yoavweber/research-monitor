@@ -48,10 +48,14 @@ func NewArxivController(uc arxivapp.UseCase, clock shared.Clock) *ArxivControlle
 // @Security     APIToken
 // @Router       /arxiv/fetch [get]
 func (ctrl *ArxivController) Fetch(c *gin.Context) {
-	results, err := ctrl.uc.Fetch(c.Request.Context())
+	result, err := ctrl.uc.Fetch(c.Request.Context())
 	if err != nil {
 		_ = c.Error(err)
 		return
 	}
-	c.JSON(http.StatusOK, common.Data(ToFetchResponse(results, ctrl.clock.Now())))
+	// The Job snapshot is wired into the response shape in task 4.2; for
+	// now the controller surfaces only the Entries slice so this commit
+	// stays build-clean. Existing /api/arxiv/fetch consumers see the
+	// pre-feature response shape unchanged.
+	c.JSON(http.StatusOK, common.Data(ToFetchResponse(result.Entries, ctrl.clock.Now())))
 }

@@ -45,6 +45,7 @@ func newController(fetcher paper.Fetcher, repo paper.Repository, clock shared.Cl
 		repo,
 		&mocks.RecordingLogger{},
 		paper.Query{Categories: []string{"cs.LG"}, MaxResults: 10},
+		mocks.NewPaperPDFScheduler(),
 	)
 	return NewArxivController(uc, clock)
 }

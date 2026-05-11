@@ -16,8 +16,16 @@ import (
 // wire the arXiv fetch endpoint. Bootstrap assembles it once at startup;
 // ArxivRouter reads it to construct the use case and controller locally.
 type ArxivConfig struct {
-	Fetcher paper.Fetcher
-	Query   paper.Query
+	Fetcher   paper.Fetcher
+	Query     paper.Query
+	Scheduler paper.PDFScheduler
+}
+
+// DownloadConfig carries the shared paper.PDFDownloadReader for the
+// pdf-download HTTP endpoints (status + SSE stream). Bootstrap assembles
+// it once at startup from the same registry that satisfies ArxivConfig.Scheduler.
+type DownloadConfig struct {
+	Reader paper.PDFDownloadReader
 }
 
 // PaperConfig is the feature-scoped sub-bundle for the source-neutral
@@ -61,6 +69,7 @@ type Deps struct {
 	Arxiv      ArxivConfig
 	Paper      PaperConfig
 	PDF        PDFConfig
+	Download   DownloadConfig
 	Extraction ExtractionConfig
 	Analyzer   AnalyzerConfig
 }
@@ -70,6 +79,7 @@ func Setup(d Deps) {
 	SourceRouter(d)
 	ArxivRouter(d)
 	PaperRouter(d)
+	PDFDownloadRouter(d)
 	ExtractionRouter(d)
 	AnalyzerRouter(d)
 }

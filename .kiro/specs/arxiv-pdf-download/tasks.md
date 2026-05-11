@@ -111,7 +111,7 @@
 
 - [ ] 4. Wire the new aggregate into the existing arxiv flow
 
-- [ ] 4.1 Modify the arxiv use case to schedule downloads after persistence
+- [x] 4.1 Modify the arxiv use case to schedule downloads after persistence
   - Extend NewArxivUseCase to accept a paper.PDFScheduler and store it on the use case
   - Change Fetch to return a FetchResult that pairs the existing []Result with a paper.DownloadJobSnapshot; after the persistence loop, collect IsNew==true entries, call paper.NewPDFDownloadRequests, and call SchedulePDFDownloads(ctx, requests); if Schedule returns an error, log at Error and return a zero snapshot, never failing the fetch response
   - Add the single trigger-site comment: `// Trigger location may move behind an explicit user-confirmation step in a future spec.` immediately above the Schedule call
@@ -126,14 +126,14 @@
   - Observable completion: a controller unit test exercises the response shape with and without IsNew entries; the response with no IsNew entries is byte-identical to the pre-spec response, and the response with IsNew entries carries job.job_id and a Pending entry per scheduled paper
   - _Requirements: 2.2_
 
-- [ ] 4.3 Register the new download route and extend route.Deps
+- [x] 4.3 Register the new download route and extend route.Deps
   - Extend route.Deps with a DownloadConfig that carries paper.PDFDownloadReader; extend ArxivConfig with Scheduler paper.PDFScheduler
   - Add a new pdfdownload_route that registers GET /api/arxiv/downloads/:job_id and GET /api/arxiv/downloads/:job_id/stream under the existing /api group, building the controller locally from DownloadConfig
   - Update arxiv_route to pass d.Arxiv.Scheduler into NewArxivUseCase
   - Observable completion: a routing smoke test (via the existing tests/integration setup harness) shows both new endpoints registered and reachable, and a basic 404 path returns the standard error envelope
   - _Requirements: 2.2, 4.5, 5.3_
 
-- [ ] 4.4 Construct the registry in bootstrap and wire shutdown
+- [x] 4.4 Construct the registry in bootstrap and wire shutdown
   - In bootstrap, construct one *Registry via NewRegistry using pdfStore, logger, clock, env.PDFDownloadRetention, and env.PDFDownloadSubscriberBuffer; pass the same value as paper.PDFScheduler into route.ArxivConfig and as paper.PDFDownloadReader into route.DownloadConfig
   - Append the returned ShutdownFunc into the existing shutdown hooks so application stop cancels the registry's background context and waits for in-flight workers (bounded by the shutdown context)
   - Observable completion: an existing bootstrap-level test (or a new minimal one if absent) starts the app, exercises a fetch end-to-end with stub fetcher and httptest PDF server, asserts the new endpoints are registered, and asserts that triggering shutdown returns within the bounded deadline with no goroutine leaks
