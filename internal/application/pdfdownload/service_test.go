@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -232,10 +233,10 @@ func TestRegistry_SchedulePDFDownloads(t *testing.T) {
 	})
 }
 
-func TestRegistry_StubReader(t *testing.T) {
+func TestRegistry_Reader_UnknownID(t *testing.T) {
 	t.Parallel()
 
-	t.Run("snapshot returns ErrDownloadJobUnknown for any id while reader is a stub", func(t *testing.T) {
+	t.Run("snapshot returns ErrDownloadJobUnknown for an id that was never scheduled", func(t *testing.T) {
 		t.Parallel()
 		reg, _, _ := newRegistryForTest(t)
 
@@ -246,7 +247,7 @@ func TestRegistry_StubReader(t *testing.T) {
 		}
 	})
 
-	t.Run("subscribe returns ErrDownloadJobUnknown for any id while reader is a stub", func(t *testing.T) {
+	t.Run("subscribe returns ErrDownloadJobUnknown for an id that was never scheduled", func(t *testing.T) {
 		t.Parallel()
 		reg, _, _ := newRegistryForTest(t)
 
@@ -260,6 +261,403 @@ func TestRegistry_StubReader(t *testing.T) {
 		}
 		if live != nil {
 			t.Errorf("live = %v, want nil", live)
+		}
+	})
+}
+
+func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
+	t.Parallel()
+
+	t.Run("final snapshot for a completed job matches the Progress and Summary events delivered on the stream", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		const n = 4
+		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		for i := 0; i < n; i++ {
+			req := paper.PDFDownloadRequest{
+				PaperID: paper.NewID("arxiv", "2404.0snap0"+string(rune('1'+i)), "v1"),
+				PDFURL:  "https://arxiv.org/pdf/snap-" + string(rune('1'+i)) + ".pdf",
+			}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
+			reqs = append(reqs, req)
+		}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		// Subscribe BEFORE releasing the worker so live carries every event.
+		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		if err != nil {
+			t.Fatalf("Subscribe: %v", err)
+		}
+		if len(backlog) != 0 {
+			t.Fatalf("pre-emit backlog len = %d, want 0", len(backlog))
+		}
+		close(release)
+
+		events, closed := drainEvents(live, 2*time.Second)
+		if !closed {
+			t.Fatalf("live did not close; got %d events", len(events))
+		}
+		if len(events) != n+1 {
+			t.Fatalf("events len = %d, want %d", len(events), n+1)
+		}
+
+		final, err := reg.SnapshotPDFDownloadJob(context.Background(), snap.JobID)
+		if err != nil {
+			t.Fatalf("Snapshot: %v", err)
+		}
+
+		summary := events[n].Summary
+		if summary == nil {
+			t.Fatalf("expected terminal Summary event")
+		}
+		if final.JobID != summary.JobID {
+			t.Errorf("snapshot JobID = %q, want %q", final.JobID, summary.JobID)
+		}
+		if final.Total != summary.Total {
+			t.Errorf("snapshot Total = %d, want %d", final.Total, summary.Total)
+		}
+		if final.Succeeded != summary.Succeeded {
+			t.Errorf("snapshot Succeeded = %d, want %d", final.Succeeded, summary.Succeeded)
+		}
+		if final.Failed != summary.Failed {
+			t.Errorf("snapshot Failed = %d, want %d", final.Failed, summary.Failed)
+		}
+		if !final.Completed {
+			t.Errorf("snapshot Completed = false, want true")
+		}
+		if final.CompletedAt != summary.CompletedAt {
+			t.Errorf("snapshot CompletedAt = %v, want %v", final.CompletedAt, summary.CompletedAt)
+		}
+
+		// Per-entry consistency: the i-th Progress event's result must equal
+		// the i-th snapshot entry (R5.4 — stream and status agree).
+		if len(final.Entries) != n {
+			t.Fatalf("snapshot Entries len = %d, want %d", len(final.Entries), n)
+		}
+		for i := 0; i < n; i++ {
+			progress := events[i].Progress
+			if progress == nil {
+				t.Fatalf("events[%d].Progress = nil", i)
+			}
+			if !reflect.DeepEqual(final.Entries[i], *progress) {
+				t.Errorf("snapshot Entries[%d] = %+v, progress event = %+v", i, final.Entries[i], *progress)
+			}
+		}
+	})
+
+	t.Run("snapshot returned to a caller cannot mutate registry-internal entries", func(t *testing.T) {
+		t.Parallel()
+
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.copy01", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/copy.pdf",
+		}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("xx")}
+
+		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
+
+		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		if err != nil {
+			t.Fatalf("Snapshot: %v", err)
+		}
+		// Mutate the returned slice; the next snapshot must be unaffected.
+		snap.Entries[0].Status = paper.DownloadStatusFailed
+
+		snap2, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		if err != nil {
+			t.Fatalf("Snapshot 2: %v", err)
+		}
+		if snap2.Entries[0].Status != paper.DownloadStatusSuccess {
+			t.Errorf("registry-internal entry was mutated through returned snapshot; status = %q", snap2.Entries[0].Status)
+		}
+	})
+
+	t.Run("snapshot for an in-progress job reflects pending entries with completed=false", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		t.Cleanup(func() {
+			// Release the worker so shutdown can drain even if the test fails early.
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.prog01", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/prog.pdf",
+		}
+		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("p")}
+
+		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		// Worker is gated, so the entry is still Pending. R5.2.
+		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		if err != nil {
+			t.Fatalf("Snapshot: %v", err)
+		}
+		if snap.Completed {
+			t.Errorf("Completed = true, want false for gated job")
+		}
+		if snap.Succeeded != 0 || snap.Failed != 0 {
+			t.Errorf("counts = (succ=%d, fail=%d), want zero for gated job", snap.Succeeded, snap.Failed)
+		}
+		if len(snap.Entries) != 1 || snap.Entries[0].Status != paper.DownloadStatusPending {
+			t.Errorf("entries = %+v, want one pending", snap.Entries)
+		}
+	})
+}
+
+func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
+	t.Parallel()
+
+	t.Run("subscriber attached after some entries have been emitted receives a backlog plus the remaining events on live", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		const n = 4
+		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		for i := 0; i < n; i++ {
+			req := paper.PDFDownloadRequest{
+				PaperID: paper.NewID("arxiv", "2404.0sub0"+string(rune('1'+i)), "v1"),
+				PDFURL:  "https://arxiv.org/pdf/sub-" + string(rune('1'+i)) + ".pdf",
+			}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("b")}
+			reqs = append(reqs, req)
+		}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		// Subscribe BEFORE the worker is released — both backlog and live
+		// must combine to exactly n+1 events with no duplicates.
+		close(release)
+		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		if err != nil {
+			t.Fatalf("Subscribe: %v", err)
+		}
+
+		got := append([]paper.DownloadEvent(nil), backlog...)
+		liveEvents, closed := drainEvents(live, 2*time.Second)
+		if !closed {
+			t.Fatalf("live channel did not close; got %d live events on top of %d backlog", len(liveEvents), len(backlog))
+		}
+		got = append(got, liveEvents...)
+
+		if len(got) != n+1 {
+			t.Fatalf("backlog+live total = %d, want %d", len(got), n+1)
+		}
+		for i := 0; i < n; i++ {
+			if got[i].Progress == nil {
+				t.Errorf("event[%d].Progress = nil, want non-nil", i)
+			}
+			if got[i].Summary != nil {
+				t.Errorf("event[%d].Summary = non-nil, want nil", i)
+			}
+		}
+		if got[n].Summary == nil {
+			t.Errorf("event[n].Summary = nil, want non-nil (terminal event)")
+		}
+	})
+
+	t.Run("subscriber attached after the job completed receives the full backlog and a pre-closed live channel", func(t *testing.T) {
+		t.Parallel()
+
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.post01", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/post.pdf",
+		}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("done")}
+
+		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
+
+		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), schedSnap.JobID)
+		if err != nil {
+			t.Fatalf("Subscribe post-completion: %v", err)
+		}
+		if len(backlog) != 2 {
+			t.Fatalf("backlog len = %d, want 2 (1 progress + 1 summary)", len(backlog))
+		}
+		if backlog[0].Progress == nil {
+			t.Errorf("backlog[0].Progress = nil, want non-nil")
+		}
+		if backlog[1].Summary == nil {
+			t.Errorf("backlog[1].Summary = nil, want non-nil")
+		}
+		// Live must be already closed: no more events ever fire for a completed job.
+		select {
+		case _, ok := <-live:
+			if ok {
+				t.Errorf("live yielded a value after completion; want closed channel")
+			}
+		case <-time.After(500 * time.Millisecond):
+			t.Errorf("live channel was not closed after completion")
+		}
+	})
+
+	t.Run("N concurrent subscribers all see every event exactly once under -race", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		// Large per-subscriber buffer so contention does not trigger the
+		// slow-consumer drop path — the focus here is the atomic handoff
+		// between backlog and live, not the drop policy.
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 256,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		const n = 12
+		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		for i := 0; i < n; i++ {
+			req := paper.PDFDownloadRequest{
+				PaperID: paper.NewID("arxiv", fmt.Sprintf("2404.0cnt%02d", i), "v1"),
+				PDFURL:  fmt.Sprintf("https://arxiv.org/pdf/cnt-%02d.pdf", i),
+			}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("c")}
+			reqs = append(reqs, req)
+		}
+
+		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		const subscribers = 16
+		// Use a barrier so all subscriber goroutines try to subscribe while
+		// the worker is mid-flight. Releasing the worker concurrently with
+		// the subscribe attempts is what stresses the atomic backlog handoff.
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		results := make(chan int, subscribers)
+		errs := make(chan error, subscribers)
+
+		for s := 0; s < subscribers; s++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				backlog, live, subErr := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+				if subErr != nil {
+					errs <- fmt.Errorf("subscribe: %w", subErr)
+					return
+				}
+				count := len(backlog)
+				// Drain live until close; count every event so duplicates
+				// or losses turn into a count mismatch.
+				timer := time.NewTimer(5 * time.Second)
+				defer timer.Stop()
+				for {
+					select {
+					case _, ok := <-live:
+						if !ok {
+							results <- count
+							return
+						}
+						count++
+					case <-timer.C:
+						errs <- fmt.Errorf("subscriber timed out after %d events", count)
+						return
+					}
+				}
+			}()
+		}
+
+		// Fire all subscribers and the worker as close to simultaneously as
+		// possible. The race detector and the per-subscriber count assertion
+		// together catch lost or duplicated events.
+		close(start)
+		close(release)
+
+		wg.Wait()
+		close(results)
+		close(errs)
+
+		for e := range errs {
+			t.Fatalf("subscriber goroutine failed: %v", e)
+		}
+
+		seen := 0
+		for c := range results {
+			seen++
+			if c != n+1 {
+				t.Errorf("subscriber saw %d events, want %d (n progress + 1 summary)", c, n+1)
+			}
+		}
+		if seen != subscribers {
+			t.Errorf("collected %d results, want %d", seen, subscribers)
 		}
 	})
 }

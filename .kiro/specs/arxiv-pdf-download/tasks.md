@@ -74,7 +74,7 @@
   - _Requirements: 3.3, 4.2, 4.3, 4.4, 6.5_
   - _Boundary: application/pdfdownload_
 
-- [ ] 2.4 Implement Reader (Snapshot, Subscribe) with atomic backlog handoff
+- [x] 2.4 Implement Reader (Snapshot, Subscribe) with atomic backlog handoff
   - Implement SnapshotPDFDownloadJob: under the registry mutex, sweep expired completed jobs, then look up the job and build a snapshot from the per-job state; return paper.ErrDownloadJobUnknown for unknown or evicted ids
   - Implement SubscribePDFDownloadJob to (1) reject unknown/evicted ids, (2) snapshot the current event log into a returned backlog slice, and (3) register a fresh buffered channel into subscribers, all under the same per-job mutex in one critical section, so that the next worker append is delivered exclusively through one of backlog or live
   - Observable completion: unit tests exercise (a) status snapshot consistency with stream events for the same job, (b) atomic Subscribe under contention with -race: spawn N concurrent Subscribers while the worker emits and assert each subscriber sees every event exactly once, and (c) Snapshot/Subscribe both return ErrDownloadJobUnknown for unknown ids and after Sweep evicts a completed job
@@ -161,3 +161,7 @@
   - Add an in-progress retention test that asserts an active job is not evicted regardless of clock advance
   - Observable completion: both tests pass; eviction logs (pdfdownload.job.evicted) are observed in the captured logger; in-progress jobs remain reachable past the retention window until completion
   - _Requirements: 6.1, 6.2, 6.3, 6.5_
+
+## Implementation Notes
+
+- `tests/mocks/logger.go` (`RecordingLogger.record`) is not mutex-guarded. Under heavy `go test -race -p 4 -parallel 8 -count=N` it surfaces a data race between the worker emitting the final `pdfdownload.job.completed` log and a test reading `logger.Records` after waiting for the Summary event. Required validation cadences (`-race -count=1`, `-race -count=20`) are clean. A future cleanup task may add a small sync.Mutex around append/read inside the fake. Discovered during task 2.4 review.

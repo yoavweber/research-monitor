@@ -207,36 +207,111 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 	return snap, nil
 }
 
-// SnapshotPDFDownloadJob is the read-side stub for task 2.1. The full
-// implementation lands in task 2.4 (lazy sweep + per-job snapshot).
-// Returning ErrDownloadJobUnknown for every id is the conservative
-// failure mode; it cannot leak a half-built snapshot before the worker
-// pipeline exists.
-func (r *Registry) SnapshotPDFDownloadJob(_ context.Context, _ paper.DownloadJobID) (paper.DownloadJobSnapshot, error) {
-	return paper.DownloadJobSnapshot{}, paper.ErrDownloadJobUnknown
+// SnapshotPDFDownloadJob returns the current per-entry results, totals,
+// and completion flag for jobID. Returns paper.ErrDownloadJobUnknown
+// when the id is unknown or has been evicted (R5.1, R5.3, R6.3).
+//
+// Locking discipline: the registry mutex serialises the map lookup; the
+// per-job mutex serialises the read of entries/completed/completedAt
+// against the worker's appends. We release the registry mutex before
+// acquiring the per-job mutex to keep contention on the global lock
+// short. This is safe because the registry never removes a job out from
+// under a read in task 2.4 — Sweep (task 2.5) is the only path that
+// would, and it has not been wired in yet (see sweepLocked placeholder).
+func (r *Registry) SnapshotPDFDownloadJob(_ context.Context, id paper.DownloadJobID) (paper.DownloadJobSnapshot, error) {
+	r.registryMu.Lock()
+	// sweepLocked(r.clock.Now()) — added in task 2.5
+	j, ok := r.jobs[id]
+	r.registryMu.Unlock()
+	if !ok {
+		return paper.DownloadJobSnapshot{}, paper.ErrDownloadJobUnknown
+	}
+
+	return snapshotForJob(j), nil
 }
 
-// SubscribePDFDownloadJob is the read-side stub for task 2.1. The
-// atomic backlog+live registration arrives in task 2.4.
-func (r *Registry) SubscribePDFDownloadJob(_ context.Context, _ paper.DownloadJobID) ([]paper.DownloadEvent, <-chan paper.DownloadEvent, error) {
-	return nil, nil, paper.ErrDownloadJobUnknown
+// SubscribePDFDownloadJob captures the current event log into a fresh
+// backlog slice and registers a buffered live channel atomically under
+// the per-job mutex (design.md "Subscribe is atomic", R4.1, R5.4).
+//
+// Guarantee: once this returns, every paper.DownloadEvent produced by
+// the worker is delivered through exactly one of backlog or live —
+// never both, never neither. The worker's appendAndFanOut takes only
+// the per-job mutex, so an event either lands in the events log before
+// our copy (and thus appears in backlog) or lands after we install our
+// channel into subscribers (and thus arrives on live).
+//
+// Post-completion case: if the worker has already finished, j.events
+// already holds the full log including the terminal Summary. We copy
+// it into backlog and return a pre-closed live channel; appending to
+// j.subscribers would be pointless because no further appends will
+// happen and finishJob has already closed every prior subscriber.
+//
+// Locking: registry mutex first to look up the job, then release it
+// before taking the per-job mutex. The worker never takes the registry
+// mutex, so holding both simultaneously is also deadlock-free, but
+// releasing first keeps the global lock available for other Schedule
+// calls during a slow consumer's setup. Job pointers cannot be
+// invalidated between the two acquires because Sweep is not wired
+// (task 2.5).
+func (r *Registry) SubscribePDFDownloadJob(_ context.Context, id paper.DownloadJobID) ([]paper.DownloadEvent, <-chan paper.DownloadEvent, error) {
+	r.registryMu.Lock()
+	// sweepLocked(r.clock.Now()) — added in task 2.5
+	j, ok := r.jobs[id]
+	r.registryMu.Unlock()
+	if !ok {
+		return nil, nil, paper.ErrDownloadJobUnknown
+	}
+
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	backlog := make([]paper.DownloadEvent, len(j.events))
+	copy(backlog, j.events)
+
+	live := make(chan paper.DownloadEvent, r.opts.SubscriberBuffer)
+	if j.completed {
+		// No more events will ever fire; close immediately so the
+		// caller's drain loop terminates. Do NOT append to j.subscribers
+		// — finishJob already closed every prior subscriber and cleared
+		// the slice.
+		close(live)
+		return backlog, live, nil
+	}
+
+	j.subscribers = append(j.subscribers, live)
+	return backlog, live, nil
 }
 
 // snapshotForJob projects a job into the public snapshot shape. Lives
 // here (not on *job) so the projection is testable from package code
-// and so task 2.3 can reuse it once it adds the completion flag fan
-// out. The function acquires j.mu while reading entries so it is safe
-// to call while the worker is appending; succeeded/failed counters and
-// the completion flag arrive in tasks 2.3/2.4.
+// and reused by both SchedulePDFDownloads (initial all-Pending case)
+// and SnapshotPDFDownloadJob (mid-flight or post-completion). Acquires
+// j.mu while reading so it is safe to call while the worker is
+// appending. Succeeded/Failed count the entries whose Status has been
+// flipped past Pending; on the initial snapshot both are zero.
 func snapshotForJob(j *job) paper.DownloadJobSnapshot {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	var succeeded, failed int
+	for _, e := range j.entries {
+		switch e.Status {
+		case paper.DownloadStatusSuccess:
+			succeeded++
+		case paper.DownloadStatusFailed:
+			failed++
+		}
+	}
 	entries := make([]paper.DownloadEntryResult, len(j.entries))
 	copy(entries, j.entries)
 	return paper.DownloadJobSnapshot{
-		JobID:   j.id,
-		Total:   j.total,
-		Entries: entries,
+		JobID:       j.id,
+		Total:       j.total,
+		Succeeded:   succeeded,
+		Failed:      failed,
+		Completed:   j.completed,
+		CompletedAt: j.completedAt,
+		Entries:     entries,
 	}
 }
 
