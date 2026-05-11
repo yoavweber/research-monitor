@@ -19,22 +19,12 @@ var (
 var (
 	ErrNotFound             = shared.NewHTTPError(http.StatusNotFound, "paper not found", nil)
 	ErrCatalogueUnavailable = shared.NewHTTPError(http.StatusInternalServerError, "paper catalogue unavailable", nil)
+	ErrDownloadJobUnknown   = shared.NewHTTPError(http.StatusNotFound, "download job unknown", nil)
 )
 
-// ErrInvalidID signals that a paper.ID failed value-object validation —
-// empty Source/SourceID, or path-traversal characters in any identity
-// component. Construction does not enforce validity; callers invoke
-// (ID).Validate before using the ID to address artifacts.
-var ErrInvalidID = errors.New("paper: invalid id")
-
-// ErrInvalidPDFDownloadRequest signals that a PDFDownloadRequest failed
-// non-identity validation (today: empty PDFURL). An invalid identity
-// surfaces as ErrInvalidID instead.
-var ErrInvalidPDFDownloadRequest = errors.New("paper: invalid pdf download request")
-
-// ErrDownloadJobUnknown signals that a DownloadJobID is unknown to the
-// PDFDownloadReader or has already been evicted past its retention
-// window. The HTTP controller wraps this into a *shared.HTTPError with
-// status 404 before returning so the existing error envelope middleware
-// handles status mapping.
-var ErrDownloadJobUnknown = errors.New("paper: download job unknown")
+// Validation sentinels for value-object construction. Plain errors —
+// surfaced before any HTTP layer so they never need an *HTTPError shape.
+var (
+	ErrInvalidID                 = errors.New("paper: invalid id")
+	ErrInvalidPDFDownloadRequest = errors.New("paper: invalid pdf download request")
+)

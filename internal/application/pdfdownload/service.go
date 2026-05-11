@@ -1,12 +1,5 @@
 // Package pdfdownload owns the in-memory registry that implements both
 // paper.PDFScheduler (write side) and paper.PDFDownloadReader (read side).
-//
-// State boundaries:
-//   - jobs map and registry-owned background context live in this package.
-//   - Schedule mutates state under a single mutex without consulting the
-//     caller's ctx (see design.md "Schedule contract is non-cancellable").
-//   - The registry depends only on domain ports: pdf.Store, shared.Logger,
-//     shared.Clock. No infrastructure imports.
 package pdfdownload
 
 import (
@@ -21,51 +14,33 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
 
-// Compile-time conformance: a *Registry value satisfies both the
-// write-side scheduler port and the read-side reader port. This is the
-// architectural commitment from design.md "Application —
-// application/pdfdownload": one struct, two ports, never duplicated.
 var (
 	_ paper.PDFScheduler      = (*Registry)(nil)
 	_ paper.PDFDownloadReader = (*Registry)(nil)
 )
 
-// Options configures a Registry. The bootstrap layer chooses defaults;
-// the registry itself does not substitute them. Fields stay reachable
-// for tasks 2.3 (SubscriberBuffer) and 2.5 (Retention) without changing
-// the constructor signature.
 type Options struct {
-	// Retention is how long completed jobs are kept before lazy
-	// eviction on the next read path. Used by task 2.5.
+	// Retention is how long completed jobs remain readable before lazy
+	// eviction on the next read path.
 	Retention time.Duration
-
-	// SubscriberBuffer sizes each subscriber's channel. A non-blocking
-	// send into this buffer is what lets the worker drop slow consumers
-	// without stalling. Used by tasks 2.3 and 2.4.
+	// SubscriberBuffer is each subscriber channel's capacity; a non-
+	// blocking send into it lets the worker drop slow consumers.
 	SubscriberBuffer int
 }
 
-// ShutdownFunc tears down the registry. It cancels the registry-owned
-// background context (so any worker goroutines spawned by future tasks
-// stop progressing) and bounds the wait by ctx. For 2.1 there are no
-// workers yet, so it cancels and returns nil.
+// ShutdownFunc cancels the registry's background context and waits for
+// in-flight workers, bounded by the caller's ctx.
 type ShutdownFunc func(ctx context.Context) error
 
-// job is the internal per-job record. Task 2.1 populated id, total, and
-// entries (all Pending). Task 2.2 added the request slice the worker
-// iterates and a completion flag flipped after the worker drains the
-// request loop. Task 2.3 added the bounded event log (total+1: one
-// Progress per entry plus the terminal Summary) and the subscribers
-// slice that the worker fans out to under j.mu.
+// job is the per-job record. mu guards the mutable fields (entries,
+// events, subscribers, completed, completedAt, startedAt) against the
+// worker's appends; requests/id/total are set once at Schedule time and
+// never mutated afterward.
 type job struct {
 	id       paper.DownloadJobID
 	total    int
 	requests []paper.PDFDownloadRequest
 
-	// mu guards entries, events, subscribers, completed, startedAt, and
-	// completedAt. The registry mutex serialises jobs map lookups; this
-	// mutex serialises per-entry appends and fan-out so a slow consumer
-	// cannot block other jobs via the global registry lock.
 	mu          sync.Mutex
 	entries     []paper.DownloadEntryResult
 	events      []paper.DownloadEvent
@@ -76,39 +51,29 @@ type job struct {
 }
 
 // Registry is the in-memory implementation of paper.PDFScheduler and
-// paper.PDFDownloadReader. The same value satisfies both ports; the
-// arxiv use case sees only the scheduler side, the download controller
-// sees only the reader side.
+// paper.PDFDownloadReader. One value satisfies both ports; the arxiv use
+// case sees only the scheduler side, the controller only the reader side.
+//
+// Lock order: registryMu (jobs map) → j.mu (per-job fields). The worker
+// only ever takes j.mu, so taking registryMu and then j.mu is
+// deadlock-free.
 type Registry struct {
 	store  pdf.Store
 	logger shared.Logger
 	clock  shared.Clock
 	opts   Options
 
-	// bgCtx is the registry-owned background context. Workers (added in
-	// task 2.2) will derive their per-job context from this so a fetch
-	// request cancellation never propagates into a running download.
-	// Cancellation flows in only via ShutdownFunc.
-	bgCtx    context.Context
-	bgCancel context.CancelFunc
-
-	// shutdownOnce makes ShutdownFunc safe to call repeatedly.
+	// bgCtx hosts workers so a fetch-request cancellation never
+	// propagates into a running download (R3.5).
+	bgCtx        context.Context
+	bgCancel     context.CancelFunc
 	shutdownOnce sync.Once
+	workers      sync.WaitGroup
 
-	// workers tracks in-flight job goroutines so ShutdownFunc can wait
-	// for them to finish (task 2.2 launches the workers; later tasks
-	// may extend the drain semantics in coordination with bgCancel).
-	workers sync.WaitGroup
-
-	// registryMu guards jobs. A single mutex is the design's invariant:
-	// Schedule mutates atomically, and read paths (added in 2.4) sweep
-	// then look up, all under this lock.
 	registryMu sync.Mutex
 	jobs       map[paper.DownloadJobID]*job
 }
 
-// NewRegistry constructs a Registry plus its ShutdownFunc. The bgCtx
-// is created here once; tasks 2.2/2.3 will use it to host workers.
 func NewRegistry(
 	store pdf.Store,
 	logger shared.Logger,
@@ -128,10 +93,8 @@ func NewRegistry(
 	shutdown := func(ctx context.Context) error {
 		r.shutdownOnce.Do(func() {
 			r.bgCancel()
-			// Bound the drain by ctx so a shutdown caller can cap how
-			// long it is willing to wait for in-flight workers. v1
-			// workers ignore ctx (R3.5) so we cannot interrupt them;
-			// the deadline still releases the caller.
+			// Workers ignore ctx (R3.5), so the deadline only releases
+			// the shutdown caller; it does not interrupt downloads.
 			done := make(chan struct{})
 			go func() {
 				r.workers.Wait()
@@ -148,10 +111,9 @@ func NewRegistry(
 }
 
 // SchedulePDFDownloads registers a new job atomically and returns its
-// initial snapshot. The passed ctx is intentionally not consulted: a
-// client disconnecting between the persistence loop and the snapshot
-// return must not cancel the just-registered job (see design.md
-// "Schedule contract is non-cancellable", R3.5).
+// initial snapshot. The passed ctx is intentionally not consulted —
+// a client disconnect between persistence and snapshot return must not
+// cancel the just-registered job (R3.5).
 func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PDFDownloadRequest) (paper.DownloadJobSnapshot, error) {
 	if len(requests) == 0 {
 		return paper.DownloadJobSnapshot{}, nil
@@ -168,10 +130,6 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 		paperIDs = append(paperIDs, formatPaperID(req.PaperID))
 	}
 
-	// Copy requests onto the job so the worker iterates a stable slice
-	// independent of the caller's backing array. The worker reads
-	// requests without taking j.mu (it is set once here and never
-	// mutated again).
 	jobRequests := make([]paper.PDFDownloadRequest, len(requests))
 	copy(jobRequests, requests)
 
@@ -180,20 +138,19 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 		total:    len(requests),
 		requests: jobRequests,
 		entries:  entries,
-		// Capacity is exactly total+1: one Progress per entry plus the
-		// terminal Summary. No more appends ever happen after Summary, so
-		// the slice never grows past this bound (R4.* invariant).
+		// Events log capped at total+1 (one Progress per entry plus
+		// the terminal Summary) — no more appends ever happen after.
 		events: make([]paper.DownloadEvent, 0, len(requests)+1),
 	}
 
 	r.registryMu.Lock()
 	r.jobs[id] = j
-	// Snapshot under the registry mutex so the returned value is
-	// derived from the same state we just installed; entries is copied
-	// to insulate the caller from any later in-place mutation by the
-	// worker.
-	snap := snapshotForJob(j)
 	r.registryMu.Unlock()
+
+	// Build the initial snapshot outside the registry mutex so we don't
+	// hold the global lock during the O(N) entries copy. The worker
+	// hasn't started yet, so reading j.entries (all Pending) is race-free.
+	snap := snapshotForJob(j)
 
 	r.logger.InfoContext(ctx, "pdfdownload.job.scheduled",
 		"job_id", string(id),
@@ -207,22 +164,14 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 	return snap, nil
 }
 
-// SnapshotPDFDownloadJob returns the current per-entry results, totals,
-// and completion flag for jobID. Returns paper.ErrDownloadJobUnknown
-// when the id is unknown or has been evicted (R5.1, R5.3, R6.3).
-//
-// Locking discipline: the registry mutex serialises the map lookup; the
-// per-job mutex serialises the read of entries/completed/completedAt
-// against the worker's appends. We release the registry mutex before
-// acquiring the per-job mutex to keep contention on the global lock
-// short. Before the lookup we call sweepLocked so an expired completed
-// job is removed lazily and returns ErrDownloadJobUnknown without a
-// background ticker (R6.3).
+// SnapshotPDFDownloadJob returns ErrDownloadJobUnknown for unknown or
+// evicted jobs, otherwise the current per-entry results and totals.
 func (r *Registry) SnapshotPDFDownloadJob(ctx context.Context, id paper.DownloadJobID) (paper.DownloadJobSnapshot, error) {
 	r.registryMu.Lock()
-	r.sweepLocked(ctx, r.clock.Now())
+	evicted := r.sweepLocked(r.clock.Now())
 	j, ok := r.jobs[id]
 	r.registryMu.Unlock()
+	r.logEvictions(ctx, evicted)
 	if !ok {
 		return paper.DownloadJobSnapshot{}, paper.ErrDownloadJobUnknown
 	}
@@ -230,36 +179,18 @@ func (r *Registry) SnapshotPDFDownloadJob(ctx context.Context, id paper.Download
 	return snapshotForJob(j), nil
 }
 
-// SubscribePDFDownloadJob captures the current event log into a fresh
-// backlog slice and registers a buffered live channel atomically under
-// the per-job mutex (design.md "Subscribe is atomic", R4.1, R5.4).
-//
-// Guarantee: once this returns, every paper.DownloadEvent produced by
-// the worker is delivered through exactly one of backlog or live —
-// never both, never neither. The worker's appendAndFanOut takes only
-// the per-job mutex, so an event either lands in the events log before
-// our copy (and thus appears in backlog) or lands after we install our
-// channel into subscribers (and thus arrives on live).
-//
-// Post-completion case: if the worker has already finished, j.events
-// already holds the full log including the terminal Summary. We copy
-// it into backlog and return a pre-closed live channel; appending to
-// j.subscribers would be pointless because no further appends will
-// happen and finishJob has already closed every prior subscriber.
-//
-// Locking: registry mutex first to look up the job (with a lazy sweep
-// of expired completed jobs first, R6.3), then release it before taking
-// the per-job mutex. The worker never takes the registry mutex, so
-// holding both simultaneously is also deadlock-free, but releasing first
-// keeps the global lock available for other Schedule calls during a
-// slow consumer's setup. Sweep only removes completed jobs, so a job
-// pointer that survives the lookup cannot be evicted out from under us
-// while the per-job mutex is acquired.
+// SubscribePDFDownloadJob captures the current event log into backlog
+// and registers a buffered live channel atomically under j.mu. Once it
+// returns, every event produced by the worker arrives via exactly one
+// of backlog or live — never both, never neither (R4.1, R5.4). A job
+// that already completed gets a fully-populated backlog and a
+// pre-closed live channel.
 func (r *Registry) SubscribePDFDownloadJob(ctx context.Context, id paper.DownloadJobID) ([]paper.DownloadEvent, <-chan paper.DownloadEvent, error) {
 	r.registryMu.Lock()
-	r.sweepLocked(ctx, r.clock.Now())
+	evicted := r.sweepLocked(r.clock.Now())
 	j, ok := r.jobs[id]
 	r.registryMu.Unlock()
+	r.logEvictions(ctx, evicted)
 	if !ok {
 		return nil, nil, paper.ErrDownloadJobUnknown
 	}
@@ -272,10 +203,8 @@ func (r *Registry) SubscribePDFDownloadJob(ctx context.Context, id paper.Downloa
 
 	live := make(chan paper.DownloadEvent, r.opts.SubscriberBuffer)
 	if j.completed {
-		// No more events will ever fire; close immediately so the
-		// caller's drain loop terminates. Do NOT append to j.subscribers
-		// — finishJob already closed every prior subscriber and cleared
-		// the slice.
+		// No more events will fire; close immediately. Don't append to
+		// j.subscribers — finishJob already cleared the slice.
 		close(live)
 		return backlog, live, nil
 	}
@@ -285,33 +214,27 @@ func (r *Registry) SubscribePDFDownloadJob(ctx context.Context, id paper.Downloa
 }
 
 // Sweep evicts every completed job whose age has reached Retention.
-// Exposed (separately from the read paths) so deterministic tests can
-// trigger eviction at a chosen `now` without going through Snapshot or
-// Subscribe. The PDFScheduler and PDFDownloadReader ports do not include
-// Sweep — it is a registry-specific method; the bootstrap layer holds
-// the concrete *Registry and never exposes it on a port.
+// Exposed for deterministic test control; production paths sweep lazily
+// on read.
 func (r *Registry) Sweep(ctx context.Context, now time.Time) {
 	r.registryMu.Lock()
-	r.sweepLocked(ctx, now)
+	evicted := r.sweepLocked(now)
 	r.registryMu.Unlock()
+	r.logEvictions(ctx, evicted)
 }
 
-// sweepLocked walks the jobs map and deletes every entry where
-// `completed && now.Sub(completedAt) >= Retention`. In-progress jobs
-// (completed == false) are NEVER evicted regardless of age (R6.1).
-//
-// Must be called with r.registryMu held. The j.completed and
-// j.completedAt fields are written by the worker under j.mu in
-// finishJob, so we acquire j.mu to read them — taking both mutexes is
-// deadlock-free because the worker never acquires registryMu. The
-// per-job lock is released before we mutate r.jobs so the worker has
-// no chance to interleave a completion against our delete.
-//
-// Eviction logs are emitted from inside r.registryMu (but after we
-// release j.mu). The Logger interface is non-blocking (slog handlers
-// return quickly) and the cost is negligible for an in-memory map
-// with at most a handful of entries.
-func (r *Registry) sweepLocked(ctx context.Context, now time.Time) {
+// evictionLog records one eviction for deferred logging outside the
+// registry mutex.
+type evictionLog struct {
+	id  paper.DownloadJobID
+	age time.Duration
+}
+
+// sweepLocked deletes completed jobs whose age >= Retention and returns
+// the eviction records. Caller must hold r.registryMu and is responsible
+// for emitting the logs after releasing it.
+func (r *Registry) sweepLocked(now time.Time) []evictionLog {
+	var evicted []evictionLog
 	for id, j := range r.jobs {
 		j.mu.Lock()
 		completed := j.completed
@@ -325,50 +248,30 @@ func (r *Registry) sweepLocked(ctx context.Context, now time.Time) {
 			continue
 		}
 		delete(r.jobs, id)
+		evicted = append(evicted, evictionLog{id: id, age: age})
+	}
+	return evicted
+}
+
+func (r *Registry) logEvictions(ctx context.Context, evicted []evictionLog) {
+	for _, e := range evicted {
 		r.logger.InfoContext(ctx, "pdfdownload.job.evicted",
-			"job_id", string(id),
-			"age_ms", age.Milliseconds(),
+			"job_id", string(e.id),
+			"age_ms", e.age.Milliseconds(),
 		)
 	}
 }
 
-// snapshotForJob projects a job into the public snapshot shape. Lives
-// here (not on *job) so the projection is testable from package code
-// and reused by both SchedulePDFDownloads (initial all-Pending case)
-// and SnapshotPDFDownloadJob (mid-flight or post-completion). Acquires
-// j.mu while reading so it is safe to call while the worker is
-// appending. Succeeded/Failed count the entries whose Status has been
-// flipped past Pending; on the initial snapshot both are zero.
+// snapshotForJob projects j into a snapshot reflecting current state.
+// Acquires j.mu while reading; safe to call while the worker is
+// appending.
 func snapshotForJob(j *job) paper.DownloadJobSnapshot {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	var succeeded, failed int
-	for _, e := range j.entries {
-		switch e.Status {
-		case paper.DownloadStatusSuccess:
-			succeeded++
-		case paper.DownloadStatusFailed:
-			failed++
-		}
-	}
-	entries := make([]paper.DownloadEntryResult, len(j.entries))
-	copy(entries, j.entries)
-	return paper.DownloadJobSnapshot{
-		JobID:       j.id,
-		Total:       j.total,
-		Succeeded:   succeeded,
-		Failed:      failed,
-		Completed:   j.completed,
-		CompletedAt: j.completedAt,
-		Entries:     entries,
-	}
+	return buildSnapshotLocked(j, j.completed, j.completedAt)
 }
 
-// formatPaperID is the structured-log shape for a paper.ID. Mirrors
-// design.md's intended (ID).String() format ("<source>:<sourceid>[v<version>]")
-// without depending on a method that lives outside this task's
-// boundary; the spec adds (ID).String() in a follow-up paper-package
-// task and call sites here will switch over then.
+// formatPaperID renders id as `<source>:<sourceid>[<version>]` for logs.
 func formatPaperID(id paper.ID) string {
 	if id.Version == "" {
 		return id.Source + ":" + id.SourceID

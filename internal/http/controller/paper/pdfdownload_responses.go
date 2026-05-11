@@ -6,21 +6,14 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 )
 
-// PaperIDDTO is the wire shape for paper.ID. Field names are the canonical
-// snake_case contract; the same shape is reused inside download status
-// responses and SSE event payloads. Version is omitted from the JSON when
-// the source has no version concept (omitempty preserves backward-compat
-// for non-versioned sources).
+// PaperIDDTO is the wire shape for paper.ID.
 type PaperIDDTO struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id"`
 	Version  string `json:"version,omitempty"`
 }
 
-// DownloadEntryResultDTO mirrors paper.DownloadEntryResult for the wire.
-// On success Bytes is populated; on failure Category and Description are
-// populated; on Pending only Status is set (other fields are zero values
-// and either omit via omitempty or marshal as zero).
+// DownloadEntryResultDTO is the wire shape for one download outcome.
 type DownloadEntryResultDTO struct {
 	PaperID     PaperIDDTO `json:"paper_id"`
 	Status      string     `json:"status"`
@@ -30,10 +23,7 @@ type DownloadEntryResultDTO struct {
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
-// DownloadJobSnapshotDTO is the wire shape for paper.DownloadJobSnapshot.
-// Used by both the GET /downloads/{job_id} status endpoint (wrapped in the
-// JobStatusEnvelope) and embedded as the Job field of the arxiv fetch
-// response.
+// DownloadJobSnapshotDTO is the wire shape for a download-job snapshot.
 type DownloadJobSnapshotDTO struct {
 	JobID       string                   `json:"job_id"`
 	Total       int                      `json:"total"`
@@ -44,22 +34,16 @@ type DownloadJobSnapshotDTO struct {
 	Entries     []DownloadEntryResultDTO `json:"entries"`
 }
 
-// JobStatusEnvelope is the schema-only wrapper for the 200 response of
-// GET /api/arxiv/downloads/{job_id}. Mirrors the FetchEnvelope pattern;
-// never instantiated, exists for the OpenAPI schema.
+// JobStatusEnvelope wraps the 200 response of GET /downloads/{job_id}
+// for the OpenAPI schema.
 type JobStatusEnvelope struct {
 	Data DownloadJobSnapshotDTO `json:"data"`
 }
 
-// DownloadProgressEventDTO is the data payload of a `download.progress`
-// SSE frame. It is a thin alias of DownloadEntryResultDTO; defined as a
-// distinct type so the SSE wire contract stays explicit.
+// DownloadProgressEventDTO is the data payload of a `download.progress` SSE frame.
 type DownloadProgressEventDTO = DownloadEntryResultDTO
 
-// DownloadSummaryEventDTO is the data payload of the terminal
-// `download.summary` SSE frame. It carries only the totals so a client
-// that has been streaming progress events does not need to redownload
-// per-entry details.
+// DownloadSummaryEventDTO is the data payload of the terminal `download.summary` SSE frame.
 type DownloadSummaryEventDTO struct {
 	JobID     string `json:"job_id"`
 	Total     int    `json:"total"`

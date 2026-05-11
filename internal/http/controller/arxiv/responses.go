@@ -53,14 +53,10 @@ type EntryResponse struct {
 	IsNew           bool      `json:"is_new"`
 }
 
-// ToFetchResponse maps the application FetchResult into the FetchResponse
-// wire shape. A nil or empty slice yields a non-nil, zero-length Entries so
-// JSON marshals to "entries":[] (not "entries":null) — required by R1.5.
-// is_new is propagated from the application layer's per-entry persist
-// result (R5.3). Job is populated only when the application scheduled a
-// real download job (non-zero JobID); a zero JobID surfaces as a nil Job
-// field with omitempty, preserving the byte-identical pre-feature shape
-// when no IsNew entries existed (R1.2 backward-compat by accident).
+// ToFetchResponse maps the application FetchResult into the wire shape.
+// Empty Entries marshals as "entries":[] (never null). Job is included
+// only when scheduling produced a real job; a zero JobID elides the
+// field via omitempty, keeping the pre-feature response byte-identical.
 func ToFetchResponse(result arxivapp.FetchResult, fetchedAt time.Time) FetchResponse {
 	resp := FetchResponse{
 		Entries:   make([]EntryResponse, 0, len(result.Entries)),

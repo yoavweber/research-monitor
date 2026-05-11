@@ -25,13 +25,9 @@ type Result struct {
 	IsNew bool
 }
 
-// FetchResult is the application-layer return shape for the arxiv fetch+
-// persist+schedule pipeline. Entries carries the persisted entries with
-// per-entry IsNew flags; Job carries the initial DownloadJobSnapshot
-// returned by paper.PDFScheduler.SchedulePDFDownloads for the IsNew
-// entries. Job is the zero value when no IsNew entries were produced or
-// when scheduling failed (the operator log carries the operational
-// signal; the user-visible response stays clean).
+// FetchResult pairs the persisted entries with the initial
+// DownloadJobSnapshot returned by the scheduler. Job is the zero value
+// when no IsNew entries existed or scheduling failed.
 type FetchResult struct {
 	Entries []Result
 	Job     paper.DownloadJobSnapshot
