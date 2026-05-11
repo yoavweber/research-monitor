@@ -92,7 +92,7 @@
 
 - [ ] 3. PDF-download controllers
 
-- [ ] 3.1 (P) Implement the JSON status endpoint
+- [x] 3.1 (P) Implement the JSON status endpoint
   - Add a controller that handles GET /api/arxiv/downloads/:job_id, calls SnapshotPDFDownloadJob, marshals the snapshot through the new DTOs, and wraps paper.ErrDownloadJobUnknown into the existing *shared.HTTPError with status 404 and a stable message ("download job unknown")
   - Add full swag annotations: @Summary, @Tags, @Produce json, @Param job_id path, @Success 200 {object} JobStatusEnvelope, @Failure 404, @Security APIToken, @Router
   - Observable completion: a controller-level unit test using a fake PDFDownloadReader returns 200 with the expected JSON for a known job, returns 404 with the standard error envelope for an unknown id, and asserts response stability across in-progress vs completed jobs
