@@ -99,7 +99,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 6.5_
   - _Boundary: http/controller/paper_
 
-- [ ] 3.2 (P) Implement the Server-Sent Events stream endpoint
+- [x] 3.2 (P) Implement the Server-Sent Events stream endpoint
   - Add a handler for GET /api/arxiv/downloads/:job_id/stream that calls SubscribePDFDownloadJob, returns 404 on ErrDownloadJobUnknown before sending any frame, otherwise sets text/event-stream headers and uses gin's c.Stream pattern with c.SSEvent("download.progress", payload) and c.SSEvent("download.summary", payload)
   - Replay the backlog slice first, then forward live channel events; close the response after the Summary frame; honor c.Request.Context().Done() so a client disconnect terminates the handler without affecting the underlying job; on a closed channel observed mid-stream emit a final SSE error frame
   - Add full swag annotations including produce text/event-stream and @Failure 404

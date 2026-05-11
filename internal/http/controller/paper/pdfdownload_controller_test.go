@@ -1,11 +1,14 @@
 package paper_test
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +34,7 @@ func newDownloadEngine(reader paper.PDFDownloadReader) *gin.Engine {
 	engine.Use(middleware.ErrorEnvelope())
 	ctrl := paperctrl.NewPDFDownloadController(reader)
 	engine.GET("/api/arxiv/downloads/:job_id", ctrl.Status)
+	engine.GET("/api/arxiv/downloads/:job_id/stream", ctrl.Stream)
 	return engine
 }
 
@@ -353,5 +357,308 @@ func TestPDFDownloadController_Status_StableShapeAcrossInProgressAndCompleted(t 
 	}
 	if _, ok := doneData["completed_at"]; !ok {
 		t.Errorf("completed data must carry completed_at; data=%v", doneData)
+	}
+}
+
+// sseFrame is one parsed (event, data) pair from an SSE response body.
+type sseFrame struct {
+	Event string
+	Data  string
+}
+
+// parseSSEFrames pairs lines of the form `event: <name>` with the
+// immediately following `data: <payload>` line. Lines that fall outside
+// that pattern are ignored. A frame is recorded only when a `data:` line
+// is seen after an `event:` line, which mirrors how a real SSE client
+// would parse the stream.
+func parseSSEFrames(t *testing.T, body string) []sseFrame {
+	t.Helper()
+	var frames []sseFrame
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var pendingEvent string
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "event:"):
+			pendingEvent = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			frames = append(frames, sseFrame{Event: pendingEvent, Data: data})
+			pendingEvent = ""
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanning SSE body: %v", err)
+	}
+	return frames
+}
+
+func progressEventFromSnapshot(snap paper.DownloadJobSnapshot, index int) paper.DownloadEvent {
+	entry := snap.Entries[index]
+	return paper.DownloadEvent{
+		JobID:    snap.JobID,
+		Progress: &entry,
+	}
+}
+
+func summaryEventFromSnapshot(snap paper.DownloadJobSnapshot) paper.DownloadEvent {
+	s := snap
+	return paper.DownloadEvent{
+		JobID:   snap.JobID,
+		Summary: &s,
+	}
+}
+
+func TestPDFDownloadController_Stream_UnknownJob_Returns404WithoutSSEFrames(t *testing.T) {
+	t.Parallel()
+
+	reader := mocks.NewPaperPDFDownloadReader() // default SubscribeErr = ErrDownloadJobUnknown
+
+	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/missing/stream", nil)
+	w := httptest.NewRecorder()
+
+	newDownloadEngine(reader).ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d, want 404; body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); strings.Contains(ct, "text/event-stream") {
+		t.Fatalf("404 response must not carry SSE Content-Type; got %q", ct)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body not JSON: %v; raw=%s", err, w.Body.String())
+	}
+	errEnv, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("body.error missing; body=%v", body)
+	}
+	if code, _ := errEnv["code"].(float64); int(code) != http.StatusNotFound {
+		t.Fatalf("error.code=%v, want 404", errEnv["code"])
+	}
+	if msg, _ := errEnv["message"].(string); msg != "download job unknown" {
+		t.Errorf("error.message=%q, want %q", msg, "download job unknown")
+	}
+
+	if got := len(parseSSEFrames(t, w.Body.String())); got != 0 {
+		t.Fatalf("expected no SSE frames; got %d", got)
+	}
+
+	if got := len(reader.SubscribeCalls); got != 1 {
+		t.Fatalf("SubscribePDFDownloadJob calls=%d, want 1", got)
+	}
+}
+
+func TestPDFDownloadController_Stream_BacklogIncludingSummary_ReplaysAndCloses(t *testing.T) {
+	t.Parallel()
+
+	// A job that has already completed at the moment of Subscribe must
+	// have its full event log delivered in backlog (Progress events plus
+	// the terminal Summary). The handler must not enter the live loop.
+	snap := completedSnapshot()
+	reader := mocks.NewPaperPDFDownloadReader()
+	reader.SubscribeErr = nil
+	reader.SubscribeBacklog = []paper.DownloadEvent{
+		progressEventFromSnapshot(snap, 0),
+		progressEventFromSnapshot(snap, 1),
+		summaryEventFromSnapshot(snap),
+	}
+	// Live channel may be nil for completed jobs; the handler must not
+	// dereference it when the backlog already terminates with Summary.
+	reader.SubscribeLive = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/job-done/stream", nil)
+	w := httptest.NewRecorder()
+
+	newDownloadEngine(reader).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("Content-Type=%q, want text/event-stream", ct)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Fatalf("Cache-Control=%q, want no-cache", cc)
+	}
+
+	frames := parseSSEFrames(t, w.Body.String())
+	if len(frames) != 3 {
+		t.Fatalf("frame count=%d, want 3; body=%q", len(frames), w.Body.String())
+	}
+	if frames[0].Event != "download.progress" || frames[1].Event != "download.progress" {
+		t.Errorf("first two frames must be download.progress; got %q, %q", frames[0].Event, frames[1].Event)
+	}
+	if frames[2].Event != "download.summary" {
+		t.Errorf("final frame must be download.summary; got %q", frames[2].Event)
+	}
+
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(frames[2].Data), &summary); err != nil {
+		t.Fatalf("summary data not JSON: %v; raw=%s", err, frames[2].Data)
+	}
+	if summary["job_id"] != "job-done" {
+		t.Errorf("summary.job_id=%v, want job-done", summary["job_id"])
+	}
+	if got, _ := summary["total"].(float64); int(got) != snap.Total {
+		t.Errorf("summary.total=%v, want %d", summary["total"], snap.Total)
+	}
+	if got, _ := summary["succeeded"].(float64); int(got) != snap.Succeeded {
+		t.Errorf("summary.succeeded=%v, want %d", summary["succeeded"], snap.Succeeded)
+	}
+	if got, _ := summary["failed"].(float64); int(got) != snap.Failed {
+		t.Errorf("summary.failed=%v, want %d", summary["failed"], snap.Failed)
+	}
+	if _, present := summary["entries"]; present {
+		t.Errorf("summary must NOT carry per-entry details (totals only); got %v", summary)
+	}
+}
+
+func TestPDFDownloadController_Stream_LiveEvents_ReplayedInOrderThenSummaryCloses(t *testing.T) {
+	t.Parallel()
+
+	snap := inProgressSnapshot()
+	// Re-shape snapshot into a finalized one so the summary frame has
+	// stable totals. The Stream test does not care about totals beyond
+	// "did the right values get serialized as the SummaryEventDTO".
+	finalSnap := snap
+	finalSnap.Completed = true
+	finalSnap.CompletedAt = time.Date(2026, 5, 9, 10, 30, 0, 0, time.UTC)
+
+	live := make(chan paper.DownloadEvent, 3)
+	live <- progressEventFromSnapshot(snap, 0)
+	live <- progressEventFromSnapshot(snap, 1)
+	live <- summaryEventFromSnapshot(finalSnap)
+	close(live)
+
+	reader := mocks.NewPaperPDFDownloadReader()
+	reader.SubscribeErr = nil
+	reader.SubscribeBacklog = nil
+	reader.SubscribeLive = live
+
+	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/job-progress/stream", nil)
+	w := httptest.NewRecorder()
+
+	newDownloadEngine(reader).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("Content-Type=%q, want text/event-stream", ct)
+	}
+
+	frames := parseSSEFrames(t, w.Body.String())
+	if len(frames) != 3 {
+		t.Fatalf("frame count=%d, want 3; body=%q", len(frames), w.Body.String())
+	}
+	if frames[0].Event != "download.progress" || frames[1].Event != "download.progress" {
+		t.Errorf("first two frames must be download.progress; got %q, %q", frames[0].Event, frames[1].Event)
+	}
+	if frames[2].Event != "download.summary" {
+		t.Errorf("final frame must be download.summary; got %q", frames[2].Event)
+	}
+
+	// Verify a progress payload carries paper_id and status — proves
+	// the DTO mapper was wired correctly on the live path.
+	var firstProgress map[string]any
+	if err := json.Unmarshal([]byte(frames[0].Data), &firstProgress); err != nil {
+		t.Fatalf("progress data not JSON: %v; raw=%s", err, frames[0].Data)
+	}
+	if firstProgress["status"] != "success" {
+		t.Errorf("first progress status=%v, want success", firstProgress["status"])
+	}
+	if _, ok := firstProgress["paper_id"].(map[string]any); !ok {
+		t.Errorf("first progress paper_id missing/wrong shape; got %v", firstProgress["paper_id"])
+	}
+}
+
+func TestPDFDownloadController_Stream_LiveChannelClosedWithoutSummary_EmitsErrorFrame(t *testing.T) {
+	t.Parallel()
+
+	snap := inProgressSnapshot()
+	live := make(chan paper.DownloadEvent, 2)
+	live <- progressEventFromSnapshot(snap, 0)
+	close(live) // closed without a Summary frame — slow-subscriber drop / shutdown.
+
+	reader := mocks.NewPaperPDFDownloadReader()
+	reader.SubscribeErr = nil
+	reader.SubscribeBacklog = nil
+	reader.SubscribeLive = live
+
+	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/job-progress/stream", nil)
+	w := httptest.NewRecorder()
+
+	// The handler must not panic even though the live channel never
+	// delivered a Summary; the only acceptable signal is a final
+	// `event: error` frame.
+	newDownloadEngine(reader).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	frames := parseSSEFrames(t, w.Body.String())
+	if len(frames) != 2 {
+		t.Fatalf("frame count=%d, want 2 (progress + error); body=%q", len(frames), w.Body.String())
+	}
+	if frames[0].Event != "download.progress" {
+		t.Errorf("first frame=%q, want download.progress", frames[0].Event)
+	}
+	if frames[1].Event != "error" {
+		t.Errorf("final frame=%q, want error", frames[1].Event)
+	}
+}
+
+func TestPDFDownloadController_Stream_ClientDisconnect_ReturnsWithoutPanic(t *testing.T) {
+	t.Parallel()
+
+	// Live channel is never fed; the handler must block in select
+	// waiting for either ctx.Done() or a live event. We cancel the
+	// request context shortly after ServeHTTP starts and assert the
+	// handler returns without panicking and without writing further
+	// frames.
+	live := make(chan paper.DownloadEvent)
+	reader := mocks.NewPaperPDFDownloadReader()
+	reader.SubscribeErr = nil
+	reader.SubscribeBacklog = nil
+	reader.SubscribeLive = live
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/job-progress/stream", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		newDownloadEngine(reader).ServeHTTP(w, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// handler returned — success.
+	case <-time.After(2 * time.Second):
+		t.Fatalf("handler did not return within 2s of context cancellation")
+	}
+	wg.Wait()
+
+	// We do NOT require any specific status here; gin may have already
+	// flushed headers before the cancel arrived (200 + open stream is
+	// fine). What matters is that the handler returned without panic
+	// and never emitted a summary frame for a job that produced none.
+	for _, f := range parseSSEFrames(t, w.Body.String()) {
+		if f.Event == "download.summary" {
+			t.Errorf("did not expect a summary frame; got data=%q", f.Data)
+		}
 	}
 }
