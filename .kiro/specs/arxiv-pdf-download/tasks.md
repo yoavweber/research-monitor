@@ -2,7 +2,7 @@
 
 ## 1. Foundation: domain extensions, configuration, and test doubles
 
-- [ ] 1. Domain, configuration, and test infrastructure setup
+- [x] 1. Domain, configuration, and test infrastructure setup
 
 - [x] 1.1 Extend the paper aggregate with a stable identity value object
   - Add a paper.ID value object that captures (Source, SourceID, Version) with a Validate method that rejects empty Source/SourceID and any path-traversal characters in identity components
@@ -46,7 +46,7 @@
 
 ## 2. Core: registry, worker, classifier
 
-- [ ] 2. PDF-download orchestration in application/pdfdownload
+- [x] 2. PDF-download orchestration in application/pdfdownload
 
 - [x] 2.1 Build the registry skeleton with Schedule and lifecycle logging
   - Implement an unexported registry struct keyed by paper.DownloadJobID with a single mutex guarding the jobs map, a registry-owned background context with cancel, and a NewRegistry constructor returning the concrete registry plus a ShutdownFunc
@@ -90,7 +90,7 @@
 
 ## 3. Core: HTTP controllers for download endpoints
 
-- [ ] 3. PDF-download controllers
+- [x] 3. PDF-download controllers
 
 - [x] 3.1 (P) Implement the JSON status endpoint
   - Add a controller that handles GET /api/arxiv/downloads/:job_id, calls SnapshotPDFDownloadJob, marshals the snapshot through the new DTOs, and wraps paper.ErrDownloadJobUnknown into the existing *shared.HTTPError with status 404 and a stable message ("download job unknown")
@@ -109,7 +109,7 @@
 
 ## 4. Integration: arxiv use case, response shape, routing, bootstrap
 
-- [ ] 4. Wire the new aggregate into the existing arxiv flow
+- [x] 4. Wire the new aggregate into the existing arxiv flow
 
 - [x] 4.1 Modify the arxiv use case to schedule downloads after persistence
   - Extend NewArxivUseCase to accept a paper.PDFScheduler and store it on the use case
@@ -141,7 +141,7 @@
 
 ## 5. Validation: integration and concurrency tests
 
-- [ ] 5. End-to-end validation under the integration build tag
+- [x] 5. End-to-end validation under the integration build tag
 
 - [x] 5.1 End-to-end happy path and failure variant
   - Add a tests/integration test that uses the existing SetupTestEnv harness and a stub arxiv fetcher returning N entries with valid PDFURLs served by an httptest.Server returning small PDF bytes
