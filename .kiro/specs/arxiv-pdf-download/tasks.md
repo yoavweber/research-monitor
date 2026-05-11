@@ -150,7 +150,7 @@
   - Observable completion: integration tests pass under -race and the failure variant produces a per-entry failed/fetch outcome consistent across the stream and the status endpoint
   - _Requirements: 1.1, 2.1, 2.2, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 5.1, 5.4_
 
-- [ ] 5.2 Concurrency and isolation
+- [x] 5.2 Concurrency and isolation
   - Add a tests/integration test that fires two GET /api/arxiv/fetch calls concurrently, asserts distinct job_id values, opens both streams concurrently, and asserts each stream receives exactly the events for its own job (no cross-talk) and both reach Summary
   - Add a separate test that opens a fetch stream, lets the client lag (slow drain), and asserts the worker still completes the job and the slow client is dropped (closed stream) without affecting the status endpoint correctness
   - Observable completion: both tests pass under -race; a final status snapshot for the slow-client job still reports the correct totals and per-entry results despite the dropped subscriber
