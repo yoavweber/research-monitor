@@ -156,7 +156,7 @@
   - Observable completion: both tests pass under -race; a final status snapshot for the slow-client job still reports the correct totals and per-entry results despite the dropped subscriber
   - _Requirements: 2.4, 4.4, 5.4_
 
-- [ ] 5.3 Retention and unknown-job behavior
+- [x] 5.3 Retention and unknown-job behavior
   - Add a tests/integration test that completes a small job, advances the injected clock past PDFDownloadRetention, triggers a read path, and asserts both endpoints return 404 with the standard error envelope
   - Add an in-progress retention test that asserts an active job is not evicted regardless of clock advance
   - Observable completion: both tests pass; eviction logs (pdfdownload.job.evicted) are observed in the captured logger; in-progress jobs remain reachable past the retention window until completion
