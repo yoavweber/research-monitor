@@ -53,9 +53,5 @@ func (ctrl *ArxivController) Fetch(c *gin.Context) {
 		_ = c.Error(err)
 		return
 	}
-	// The Job snapshot is wired into the response shape in task 4.2; for
-	// now the controller surfaces only the Entries slice so this commit
-	// stays build-clean. Existing /api/arxiv/fetch consumers see the
-	// pre-feature response shape unchanged.
-	c.JSON(http.StatusOK, common.Data(ToFetchResponse(result.Entries, ctrl.clock.Now())))
+	c.JSON(http.StatusOK, common.Data(ToFetchResponse(result, ctrl.clock.Now())))
 }

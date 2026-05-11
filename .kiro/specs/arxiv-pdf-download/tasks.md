@@ -119,7 +119,7 @@
   - Observable completion: arxiv usecase unit tests pass with the fake scheduler asserting all three behaviors above; FetchResult callers see a non-zero snapshot only when at least one IsNew entry exists
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 4.2 Surface the initial download snapshot in the arxiv HTTP response
+- [x] 4.2 Surface the initial download snapshot in the arxiv HTTP response
   - Update the arxiv controller's response builder to include the FetchResult.Job snapshot under a job field with omitempty so the JSON shape is byte-identical to today when no entry is IsNew
   - Update swag annotations to reference the extended FetchEnvelope that includes the optional download job snapshot DTO
   - Run task swag and commit the regenerated docs

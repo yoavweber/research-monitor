@@ -8,6 +8,7 @@ import (
 	"time"
 
 	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 )
 
@@ -23,15 +24,14 @@ type FetchEnvelope struct {
 //
 // Job is the initial snapshot of the PDF-download job that was scheduled
 // for the IsNew entries in this fetch. It is omitempty: when the fetch
-// produced no new entries, the field is omitted entirely so the response
-// shape is byte-identical to the pre-feature contract for empty fetches.
-// The field is populated by ToFetchResponse only after task 4.2 wires the
-// scheduler into the arxiv use case; until then it is always nil.
+// produced no new entries (or scheduling failed), the field is omitted
+// entirely so the response shape is byte-identical to the pre-feature
+// contract for empty fetches.
 type FetchResponse struct {
-	Entries   []EntryResponse                    `json:"entries"`
-	Count     int                                `json:"count"`
-	FetchedAt time.Time                          `json:"fetched_at"`
-	Job       *paperctrl.DownloadJobSnapshotDTO  `json:"job,omitempty"`
+	Entries   []EntryResponse                   `json:"entries"`
+	Count     int                               `json:"count"`
+	FetchedAt time.Time                         `json:"fetched_at"`
+	Job       *paperctrl.DownloadJobSnapshotDTO `json:"job,omitempty"`
 }
 
 // EntryResponse is the per-paper wire shape. Field names are the canonical
@@ -53,17 +53,21 @@ type EntryResponse struct {
 	IsNew           bool      `json:"is_new"`
 }
 
-// ToFetchResponse maps the fetched results into the FetchResponse wire shape.
-// A nil or empty slice yields a non-nil, zero-length Entries so JSON marshals
-// to "entries":[] (not "entries":null) — required by requirement 1.5. is_new
-// is propagated from the application layer's per-entry persist result (R5.3).
-func ToFetchResponse(results []arxivapp.Result, fetchedAt time.Time) FetchResponse {
+// ToFetchResponse maps the application FetchResult into the FetchResponse
+// wire shape. A nil or empty slice yields a non-nil, zero-length Entries so
+// JSON marshals to "entries":[] (not "entries":null) — required by R1.5.
+// is_new is propagated from the application layer's per-entry persist
+// result (R5.3). Job is populated only when the application scheduled a
+// real download job (non-zero JobID); a zero JobID surfaces as a nil Job
+// field with omitempty, preserving the byte-identical pre-feature shape
+// when no IsNew entries existed (R1.2 backward-compat by accident).
+func ToFetchResponse(result arxivapp.FetchResult, fetchedAt time.Time) FetchResponse {
 	resp := FetchResponse{
-		Entries:   make([]EntryResponse, 0, len(results)),
-		Count:     len(results),
+		Entries:   make([]EntryResponse, 0, len(result.Entries)),
+		Count:     len(result.Entries),
 		FetchedAt: fetchedAt,
 	}
-	for _, r := range results {
+	for _, r := range result.Entries {
 		e := r.Entry
 		resp.Entries = append(resp.Entries, EntryResponse{
 			Source:          e.Source,
@@ -80,6 +84,10 @@ func ToFetchResponse(results []arxivapp.Result, fetchedAt time.Time) FetchRespon
 			AbsURL:          e.AbsURL,
 			IsNew:           r.IsNew,
 		})
+	}
+	if result.Job.JobID != paper.DownloadJobID("") {
+		dto := paperctrl.ToDownloadJobSnapshotDTO(result.Job)
+		resp.Job = &dto
 	}
 	return resp
 }

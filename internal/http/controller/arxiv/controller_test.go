@@ -164,6 +164,27 @@ func TestArxivController_Success(t *testing.T) {
 	if !ok || len(cats) != 2 || cats[0] != "cs.LG" || cats[1] != "stat.ML" {
 		t.Fatalf("entries[0].categories=%v", first["categories"])
 	}
+
+	// R2.2: when at least one entry is IsNew, the response carries the
+	// initial download job snapshot under "job".
+	job, ok := data["job"].(map[string]any)
+	if !ok {
+		t.Fatalf("data.job missing or wrong type; data=%v", data)
+	}
+	if jobID, _ := job["job_id"].(string); jobID == "" {
+		t.Errorf("data.job.job_id empty; want non-empty")
+	}
+	if total, _ := job["total"].(float64); int(total) != 1 {
+		t.Errorf("data.job.total=%v, want 1", job["total"])
+	}
+	jobEntries, ok := job["entries"].([]any)
+	if !ok || len(jobEntries) != 1 {
+		t.Fatalf("data.job.entries len=%d, want 1; got=%v", len(jobEntries), job["entries"])
+	}
+	jobEntry := jobEntries[0].(map[string]any)
+	if jobEntry["status"] != "pending" {
+		t.Errorf("data.job.entries[0].status=%v, want pending", jobEntry["status"])
+	}
 }
 
 // TestArxivController_IsNewMix verifies that a mixed batch (one new, one
@@ -255,6 +276,16 @@ func TestArxivController_Empty_Returns_NonNull_EmptyArray(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("data.entries length=%d, want 0", len(entries))
+	}
+
+	// R1.2 backward-compat: when zero entries are IsNew, the response
+	// must omit the "job" field entirely so consumers built against the
+	// pre-feature shape see no change.
+	if _, present := data["job"]; present {
+		t.Errorf("data.job must be omitted on empty fetch; got %v", data["job"])
+	}
+	if strings.Contains(raw, `"job"`) {
+		t.Errorf("response must not contain \"job\" key on empty fetch; body=%s", raw)
 	}
 }
 
