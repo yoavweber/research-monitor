@@ -1123,6 +1123,221 @@ func TestRegistry_FanOut(t *testing.T) {
 	})
 }
 
+func TestRegistry_Sweep(t *testing.T) {
+	t.Parallel()
+
+	t.Run("retains a completed job whose age is below the retention window", func(t *testing.T) {
+		t.Parallel()
+
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		clock := mocks.NewMovableClock(start)
+		retention := 5 * time.Minute
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        retention,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.retain1", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/retain1.pdf",
+		}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body")}
+
+		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
+
+		clock.Set(start.Add(retention - time.Second))
+
+		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+
+		if err != nil {
+			t.Fatalf("Snapshot: unexpected error %v", err)
+		}
+		if snap.JobID != schedSnap.JobID {
+			t.Errorf("snapshot JobID = %q, want %q", snap.JobID, schedSnap.JobID)
+		}
+		if !snap.Completed {
+			t.Errorf("snapshot Completed = false, want true")
+		}
+		for _, r := range logger.RecordsAt("Info") {
+			if r.Msg == "pdfdownload.job.evicted" {
+				t.Errorf("unexpected eviction log while age < retention: %+v", r)
+			}
+		}
+	})
+
+	t.Run("never evicts an in-progress job even when age exceeds the retention window", func(t *testing.T) {
+		t.Parallel()
+
+		inner := mocks.NewPDFStore(t.TempDir())
+		release := make(chan struct{})
+		t.Cleanup(func() {
+			// Always release so the worker can finish before shutdown drains.
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		})
+		store := newGatedStore(inner, release)
+		logger := &mocks.RecordingLogger{}
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		clock := mocks.NewMovableClock(start)
+		retention := 5 * time.Minute
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        retention,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.gated01", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/gated.pdf",
+		}
+		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("g")}
+
+		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		// Worker is blocked on the gated store; advance the clock past 2x
+		// the retention window and force a sweep directly.
+		clock.Set(start.Add(2 * retention))
+		reg.Sweep(context.Background(), clock.Now())
+
+		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		if err != nil {
+			t.Fatalf("Snapshot after sweep on in-progress job: %v", err)
+		}
+		if snap.JobID != schedSnap.JobID {
+			t.Errorf("snapshot JobID = %q, want %q", snap.JobID, schedSnap.JobID)
+		}
+		if snap.Completed {
+			t.Errorf("Completed = true, want false (worker is gated)")
+		}
+		for _, r := range logger.RecordsAt("Info") {
+			if r.Msg == "pdfdownload.job.evicted" {
+				t.Errorf("unexpected eviction log for in-progress job: %+v", r)
+			}
+		}
+
+		// Release the worker so the test does not leave a goroutine hanging.
+		close(release)
+		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
+	})
+
+	t.Run("evicts a completed job older than the retention window on the next snapshot read", func(t *testing.T) {
+		t.Parallel()
+
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		clock := mocks.NewMovableClock(start)
+		retention := 5 * time.Minute
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        retention,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.evict01", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/evict.pdf",
+		}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("e")}
+
+		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
+
+		advance := retention + time.Second
+		clock.Set(start.Add(advance))
+
+		_, err = reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+			t.Fatalf("Snapshot after eviction: err = %v, want ErrDownloadJobUnknown", err)
+		}
+
+		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), schedSnap.JobID)
+		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+			t.Fatalf("Subscribe after eviction: err = %v, want ErrDownloadJobUnknown", err)
+		}
+		if backlog != nil {
+			t.Errorf("backlog = %v, want nil after eviction", backlog)
+		}
+		if live != nil {
+			t.Errorf("live = %v, want nil after eviction", live)
+		}
+
+		var evictLog *mocks.LogRecord
+		for _, r := range logger.RecordsAt("Info") {
+			if r.Msg == "pdfdownload.job.evicted" {
+				rec := r
+				evictLog = &rec
+				break
+			}
+		}
+		if evictLog == nil {
+			t.Fatalf("expected pdfdownload.job.evicted log; records=%+v", logger.Records)
+		}
+		if got := evictLog.Args["job_id"]; got != string(schedSnap.JobID) {
+			t.Errorf("evict log job_id = %v, want %v", got, schedSnap.JobID)
+		}
+		ageMs, ok := evictLog.Args["age_ms"].(int64)
+		if !ok {
+			t.Fatalf("evict log age_ms type = %T, want int64", evictLog.Args["age_ms"])
+		}
+		if ageMs <= 0 {
+			t.Errorf("evict log age_ms = %d, want > 0", ageMs)
+		}
+	})
+
+	t.Run("explicit Sweep call evicts an aged completed job before any read path runs", func(t *testing.T) {
+		t.Parallel()
+
+		store := mocks.NewPDFStore(t.TempDir())
+		logger := &mocks.RecordingLogger{}
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		clock := mocks.NewMovableClock(start)
+		retention := 5 * time.Minute
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        retention,
+			SubscriberBuffer: 32,
+		})
+		t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+		req := paper.PDFDownloadRequest{
+			PaperID: paper.NewID("arxiv", "2404.swdir01", "v1"),
+			PDFURL:  "https://arxiv.org/pdf/swdir.pdf",
+		}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("s")}
+
+		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
+
+		clock.Set(start.Add(retention + 2*time.Second))
+		reg.Sweep(context.Background(), clock.Now())
+
+		_, err = reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+
+		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+			t.Fatalf("Snapshot after direct Sweep: err = %v, want ErrDownloadJobUnknown", err)
+		}
+	})
+}
+
 func TestNewRegistry_ShutdownReturnsNil(t *testing.T) {
 	t.Parallel()
 

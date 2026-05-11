@@ -215,12 +215,12 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 // per-job mutex serialises the read of entries/completed/completedAt
 // against the worker's appends. We release the registry mutex before
 // acquiring the per-job mutex to keep contention on the global lock
-// short. This is safe because the registry never removes a job out from
-// under a read in task 2.4 — Sweep (task 2.5) is the only path that
-// would, and it has not been wired in yet (see sweepLocked placeholder).
-func (r *Registry) SnapshotPDFDownloadJob(_ context.Context, id paper.DownloadJobID) (paper.DownloadJobSnapshot, error) {
+// short. Before the lookup we call sweepLocked so an expired completed
+// job is removed lazily and returns ErrDownloadJobUnknown without a
+// background ticker (R6.3).
+func (r *Registry) SnapshotPDFDownloadJob(ctx context.Context, id paper.DownloadJobID) (paper.DownloadJobSnapshot, error) {
 	r.registryMu.Lock()
-	// sweepLocked(r.clock.Now()) — added in task 2.5
+	r.sweepLocked(ctx, r.clock.Now())
 	j, ok := r.jobs[id]
 	r.registryMu.Unlock()
 	if !ok {
@@ -247,16 +247,17 @@ func (r *Registry) SnapshotPDFDownloadJob(_ context.Context, id paper.DownloadJo
 // j.subscribers would be pointless because no further appends will
 // happen and finishJob has already closed every prior subscriber.
 //
-// Locking: registry mutex first to look up the job, then release it
-// before taking the per-job mutex. The worker never takes the registry
-// mutex, so holding both simultaneously is also deadlock-free, but
-// releasing first keeps the global lock available for other Schedule
-// calls during a slow consumer's setup. Job pointers cannot be
-// invalidated between the two acquires because Sweep is not wired
-// (task 2.5).
-func (r *Registry) SubscribePDFDownloadJob(_ context.Context, id paper.DownloadJobID) ([]paper.DownloadEvent, <-chan paper.DownloadEvent, error) {
+// Locking: registry mutex first to look up the job (with a lazy sweep
+// of expired completed jobs first, R6.3), then release it before taking
+// the per-job mutex. The worker never takes the registry mutex, so
+// holding both simultaneously is also deadlock-free, but releasing first
+// keeps the global lock available for other Schedule calls during a
+// slow consumer's setup. Sweep only removes completed jobs, so a job
+// pointer that survives the lookup cannot be evicted out from under us
+// while the per-job mutex is acquired.
+func (r *Registry) SubscribePDFDownloadJob(ctx context.Context, id paper.DownloadJobID) ([]paper.DownloadEvent, <-chan paper.DownloadEvent, error) {
 	r.registryMu.Lock()
-	// sweepLocked(r.clock.Now()) — added in task 2.5
+	r.sweepLocked(ctx, r.clock.Now())
 	j, ok := r.jobs[id]
 	r.registryMu.Unlock()
 	if !ok {
@@ -281,6 +282,54 @@ func (r *Registry) SubscribePDFDownloadJob(_ context.Context, id paper.DownloadJ
 
 	j.subscribers = append(j.subscribers, live)
 	return backlog, live, nil
+}
+
+// Sweep evicts every completed job whose age has reached Retention.
+// Exposed (separately from the read paths) so deterministic tests can
+// trigger eviction at a chosen `now` without going through Snapshot or
+// Subscribe. The PDFScheduler and PDFDownloadReader ports do not include
+// Sweep — it is a registry-specific method; the bootstrap layer holds
+// the concrete *Registry and never exposes it on a port.
+func (r *Registry) Sweep(ctx context.Context, now time.Time) {
+	r.registryMu.Lock()
+	r.sweepLocked(ctx, now)
+	r.registryMu.Unlock()
+}
+
+// sweepLocked walks the jobs map and deletes every entry where
+// `completed && now.Sub(completedAt) >= Retention`. In-progress jobs
+// (completed == false) are NEVER evicted regardless of age (R6.1).
+//
+// Must be called with r.registryMu held. The j.completed and
+// j.completedAt fields are written by the worker under j.mu in
+// finishJob, so we acquire j.mu to read them — taking both mutexes is
+// deadlock-free because the worker never acquires registryMu. The
+// per-job lock is released before we mutate r.jobs so the worker has
+// no chance to interleave a completion against our delete.
+//
+// Eviction logs are emitted from inside r.registryMu (but after we
+// release j.mu). The Logger interface is non-blocking (slog handlers
+// return quickly) and the cost is negligible for an in-memory map
+// with at most a handful of entries.
+func (r *Registry) sweepLocked(ctx context.Context, now time.Time) {
+	for id, j := range r.jobs {
+		j.mu.Lock()
+		completed := j.completed
+		completedAt := j.completedAt
+		j.mu.Unlock()
+		if !completed {
+			continue
+		}
+		age := now.Sub(completedAt)
+		if age < r.opts.Retention {
+			continue
+		}
+		delete(r.jobs, id)
+		r.logger.InfoContext(ctx, "pdfdownload.job.evicted",
+			"job_id", string(id),
+			"age_ms", age.Milliseconds(),
+		)
+	}
 }
 
 // snapshotForJob projects a job into the public snapshot shape. Lives

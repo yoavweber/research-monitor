@@ -81,7 +81,7 @@
   - _Requirements: 4.1, 4.5, 5.1, 5.2, 5.3, 5.4_
   - _Boundary: application/pdfdownload_
 
-- [ ] 2.5 Implement Sweep and lazy eviction on read paths
+- [x] 2.5 Implement Sweep and lazy eviction on read paths
   - Implement Sweep(ctx, now) that iterates jobs and evicts entries whose completed && now.Sub(completedAt) >= Retention; emit pdfdownload.job.evicted at Info with job_id and age_ms
   - Call sweepLocked(clock.Now()) at the top of every read path (Snapshot, Subscribe) so eviction happens lazily without a background ticker
   - Observable completion: unit tests using an injectable shared.Clock fake assert that (a) a completed job younger than Retention is retained, (b) an in-progress job is never evicted regardless of age, and (c) a completed job older than Retention is evicted on the next read and a subsequent Snapshot/Subscribe returns ErrDownloadJobUnknown
