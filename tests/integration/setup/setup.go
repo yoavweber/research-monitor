@@ -16,13 +16,16 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/application"
 	appanalyzer "github.com/yoavweber/research-monitor/backend/internal/application/analyzer"
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
+	apppdfdownload "github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	analyzerdomain "github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
+	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	llmstub "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
+	pdflocal "github.com/yoavweber/research-monitor/backend/internal/infrastructure/pdf/local"
 	persistence "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	analyzerrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
 	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
@@ -32,6 +35,7 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/http/controller"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/http/route"
+	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
 
 const TestToken = "test-token"
@@ -85,6 +89,24 @@ type TestEnvOpts struct {
 	// extraction repo for body markdown, so meaningful analyzer tests
 	// should also seed the extractions table directly via TestEnv.DB.
 	WireAnalyzer bool
+
+	// WirePDFDownload toggles the PDF-download slice. When true, the
+	// harness constructs an in-process pdfdownload.Registry (rooted at a
+	// temp dir for the underlying pdf.Store) and wires it as both
+	// ArxivConfig.Scheduler and DownloadConfig.Reader, mounts the
+	// status + SSE routes, and registers shutdown into Close. The arxiv
+	// route is also wired automatically when WirePDFDownload is true
+	// (the download flow has no purpose without the trigger), so callers
+	// should also supply ArxivFetcher.
+	WirePDFDownload bool
+
+	// PDFDownloadRetention overrides the registry's retention window.
+	// Zero defaults to 5 minutes to mirror bootstrap.
+	PDFDownloadRetention time.Duration
+
+	// PDFDownloadSubscriberBuf overrides the per-subscriber channel
+	// capacity. Zero defaults to 32 to mirror bootstrap.
+	PDFDownloadSubscriberBuf int
 }
 
 type TestEnv struct {
@@ -120,6 +142,11 @@ type TestEnv struct {
 	// rows (e.g. extractions whose body the analyzer reads) without
 	// re-opening the database.
 	DB *gorm.DB
+
+	// PDFDownloadRegistry is exposed for retention/eviction tests so
+	// task 5.3 can invoke Sweep directly. Nil when WirePDFDownload is
+	// false.
+	PDFDownloadRegistry *apppdfdownload.Registry
 
 	Close func()
 }
@@ -179,6 +206,62 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 	g.PATCH("/:id", sourceCtrl.Update)
 	g.DELETE("/:id", sourceCtrl.Delete)
 
+	// PDF-download wiring is opt-in via TestEnvOpts.WirePDFDownload. The
+	// harness mirrors bootstrap.NewApp: a real on-disk pdf.Store rooted at
+	// a temp dir plus the real byte fetcher, so the worker performs an
+	// actual HTTP GET against whichever test httptest.Server the caller
+	// stands up. One Registry value satisfies both ArxivConfig.Scheduler
+	// (write side) and DownloadConfig.Reader (read side); ShutdownFunc is
+	// chained into closeFn so in-flight downloads drain before the HTTP
+	// server tears down.
+	//
+	// When WirePDFDownload is false but the arxiv route is wired, the
+	// harness injects a recording PaperPDFScheduler fake so the arxiv use
+	// case's Scheduler.SchedulePDFDownloads call does not blow up on a nil
+	// interface. The fake records the requests but performs no I/O —
+	// pre-existing arxiv-only tests stay hermetic.
+	var (
+		pdfDownloadRegistry *apppdfdownload.Registry
+		pdfDownloadShutdown apppdfdownload.ShutdownFunc
+		arxivScheduler      paper.PDFScheduler
+		downloadReader      paper.PDFDownloadReader
+	)
+	if o.WirePDFDownload {
+		retention := o.PDFDownloadRetention
+		if retention == 0 {
+			retention = 5 * time.Minute
+		}
+		subscriberBuf := o.PDFDownloadSubscriberBuf
+		if subscriberBuf == 0 {
+			subscriberBuf = 32
+		}
+		// Per-test root keeps file writes isolated. The byte fetcher's
+		// timeout is generous; integration tests serve from an in-process
+		// httptest.Server so transport latency is negligible.
+		storeRoot := filepath.Join(dir, "pdfstore")
+		byteFetcher := httpclient.NewByteFetcher(15*time.Second, "research-monitor-test/1.0")
+		store, err := pdflocal.NewStore(storeRoot, byteFetcher, logger)
+		if err != nil {
+			t.Fatalf("pdf local store: %v", err)
+		}
+		pdfDownloadRegistry, pdfDownloadShutdown = apppdfdownload.NewRegistry(
+			store,
+			logger,
+			clock,
+			apppdfdownload.Options{
+				Retention:        retention,
+				SubscriberBuffer: subscriberBuf,
+			},
+		)
+		arxivScheduler = pdfDownloadRegistry
+		downloadReader = pdfDownloadRegistry
+	} else if o.ArxivFetcher != nil {
+		// Arxiv use case unconditionally calls Scheduler.SchedulePDFDownloads
+		// after a successful persist; a nil scheduler panics. The recording
+		// fake satisfies the port without performing any I/O.
+		arxivScheduler = mocks.NewPaperPDFScheduler()
+	}
+
 	// Deps is assembled once and reused for both routers so the same repo
 	// instance backs the catalogue read endpoints and the arxiv fetch+persist
 	// orchestrator — exactly the production wiring shape from bootstrap.
@@ -188,15 +271,20 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		Logger: logger,
 		Clock:  clock,
 		Arxiv: route.ArxivConfig{
-			Fetcher: o.ArxivFetcher,
-			Query:   o.ArxivQuery,
+			Fetcher:   o.ArxivFetcher,
+			Query:     o.ArxivQuery,
+			Scheduler: arxivScheduler,
 		},
-		Paper: route.PaperConfig{Repo: repo},
+		Paper:    route.PaperConfig{Repo: repo},
+		Download: route.DownloadConfig{Reader: downloadReader},
 	}
 
 	route.PaperRouter(deps)
 	if o.ArxivFetcher != nil {
 		route.ArxivRouter(deps)
+	}
+	if o.WirePDFDownload {
+		route.PDFDownloadRouter(deps)
 	}
 
 	// Extraction wiring is opt-in via TestEnvOpts.Extractor so existing
@@ -289,28 +377,37 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 	}
 
 	srv := httptest.NewServer(engine)
-	closeFn := srv.Close
-	if workerStop != nil {
-		// Stop the worker before tearing down the HTTP server so an
-		// in-flight Process call observes its own ctx cancellation rather
-		// than a half-closed handle (Critical Issue 1 resolution mirrored
-		// at the test-harness level).
-		closeFn = func() {
+	// closeFn chains optional shutdown hooks (extraction worker, pdfdownload
+	// registry) ahead of the HTTP server teardown so background goroutines
+	// owned by the harness observe their own cancellation rather than racing
+	// the server close.
+	closeFn := func() {
+		if workerStop != nil {
 			workerStop()
-			srv.Close()
 		}
+		if pdfDownloadShutdown != nil {
+			// Bound the drain by a short context: v1 workers ignore ctx
+			// (R3.5), so cancellation cannot interrupt them; the deadline
+			// only caps the test's wait. Integration scenarios complete
+			// within milliseconds so the bound is comfortable.
+			drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = pdfDownloadShutdown(drainCtx)
+			cancel()
+		}
+		srv.Close()
 	}
 
 	return &TestEnv{
-		Server:            srv,
-		SourceUC:          uc,
-		ArxivFetcher:      o.ArxivFetcher,
-		PaperRepo:         repo,
-		ExtractionRepo:    extractionRepo,
-		ExtractionUseCase: extractionUseCase,
-		AnalyzerRepo:      analyzerRepo,
-		AnalyzerUseCase:   analyzerUseCase,
-		DB:                db,
-		Close:             closeFn,
+		Server:              srv,
+		SourceUC:            uc,
+		ArxivFetcher:        o.ArxivFetcher,
+		PaperRepo:           repo,
+		ExtractionRepo:      extractionRepo,
+		ExtractionUseCase:   extractionUseCase,
+		AnalyzerRepo:        analyzerRepo,
+		AnalyzerUseCase:     analyzerUseCase,
+		DB:                  db,
+		PDFDownloadRegistry: pdfDownloadRegistry,
+		Close:               closeFn,
 	}
 }
