@@ -15,11 +15,3 @@ type ID struct {
 func IDFromEntry(e Entry) ID {
 	return ID{Source: e.Source, SourceID: e.SourceID, Version: e.Version}
 }
-
-// PDFArtifactKey returns the source-scoped artifact identifier used as
-// the SourceID of pdf.Key. For arXiv this concatenates SourceID and
-// Version (e.g. "2404.12345v1"). Centralized here so the worker and any
-// future caller share the same cache-key rule.
-func (i ID) PDFArtifactKey() string {
-	return i.SourceID + i.Version
-}

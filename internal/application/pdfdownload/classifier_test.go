@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 )
 
@@ -18,8 +17,8 @@ func TestClassify(t *testing.T) {
 
 		status, category, desc := classify(nil)
 
-		if status != paper.DownloadStatusSuccess {
-			t.Errorf("status = %q, want %q", status, paper.DownloadStatusSuccess)
+		if status != StatusSuccess {
+			t.Errorf("status = %q, want %q", status, StatusSuccess)
 		}
 		if category != "" {
 			t.Errorf("category = %q, want empty", category)
@@ -35,8 +34,8 @@ func TestClassify(t *testing.T) {
 
 		status, category, desc := classify(err)
 
-		if status != paper.DownloadStatusFailed {
-			t.Errorf("status = %q, want %q", status, paper.DownloadStatusFailed)
+		if status != StatusFailed {
+			t.Errorf("status = %q, want %q", status, StatusFailed)
 		}
 		if category != pdf.CategoryInvalidKey {
 			t.Errorf("category = %q, want %q", category, pdf.CategoryInvalidKey)
@@ -52,8 +51,8 @@ func TestClassify(t *testing.T) {
 
 		status, category, _ := classify(err)
 
-		if status != paper.DownloadStatusFailed {
-			t.Errorf("status = %q, want %q", status, paper.DownloadStatusFailed)
+		if status != StatusFailed {
+			t.Errorf("status = %q, want %q", status, StatusFailed)
 		}
 		if category != pdf.CategoryFetch {
 			t.Errorf("category = %q, want %q", category, pdf.CategoryFetch)
@@ -66,8 +65,8 @@ func TestClassify(t *testing.T) {
 
 		status, category, _ := classify(err)
 
-		if status != paper.DownloadStatusFailed {
-			t.Errorf("status = %q, want %q", status, paper.DownloadStatusFailed)
+		if status != StatusFailed {
+			t.Errorf("status = %q, want %q", status, StatusFailed)
 		}
 		if category != pdf.CategoryStore {
 			t.Errorf("category = %q, want %q", category, pdf.CategoryStore)
@@ -80,8 +79,8 @@ func TestClassify(t *testing.T) {
 
 		status, category, _ := classify(err)
 
-		if status != paper.DownloadStatusFailed {
-			t.Errorf("status = %q, want %q", status, paper.DownloadStatusFailed)
+		if status != StatusFailed {
+			t.Errorf("status = %q, want %q", status, StatusFailed)
 		}
 		if category != "unknown" {
 			t.Errorf("category = %q, want %q", category, "unknown")

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 )
@@ -16,9 +17,9 @@ func TestToDownloadEntryResultDTO(t *testing.T) {
 	t.Run("pending entry omits completed_at from JSON", func(t *testing.T) {
 		t.Parallel()
 
-		dto := paperctrl.ToDownloadEntryResultDTO(paper.DownloadEntryResult{
+		dto := paperctrl.ToDownloadEntryResultDTO(pdfdownload.EntryResult{
 			PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "2404.12345", Version: "v1"},
-			Status:  paper.DownloadStatusPending,
+			Status:  pdfdownload.StatusPending,
 		})
 
 		raw, err := json.Marshal(dto)
@@ -35,9 +36,9 @@ func TestToDownloadEntryResultDTO(t *testing.T) {
 
 		ts := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 
-		dto := paperctrl.ToDownloadEntryResultDTO(paper.DownloadEntryResult{
+		dto := paperctrl.ToDownloadEntryResultDTO(pdfdownload.EntryResult{
 			PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.12345", Version: "v1"},
-			Status:      paper.DownloadStatusSuccess,
+			Status:      pdfdownload.StatusSuccess,
 			Bytes:       1234,
 			CompletedAt: ts,
 		})
@@ -54,8 +55,8 @@ func TestToDownloadJobSnapshotDTO(t *testing.T) {
 	t.Run("empty Entries marshals to a non-nil empty array", func(t *testing.T) {
 		t.Parallel()
 
-		dto := paperctrl.ToDownloadJobSnapshotDTO(paper.DownloadJobSnapshot{
-			JobID: paper.DownloadJobID("abc"),
+		dto := paperctrl.ToDownloadJobSnapshotDTO(pdfdownload.JobSnapshot{
+			JobID: pdfdownload.JobID("abc"),
 			Total: 0,
 		})
 
@@ -72,16 +73,16 @@ func TestToDownloadJobSnapshotDTO(t *testing.T) {
 		t.Parallel()
 
 		ts := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
-		snap := paper.DownloadJobSnapshot{
+		snap := pdfdownload.JobSnapshot{
 			JobID:       "job-1",
 			Total:       2,
 			Succeeded:   1,
 			Failed:      1,
 			Completed:   true,
 			CompletedAt: ts,
-			Entries: []paper.DownloadEntryResult{
-				{PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "1", Version: "v1"}, Status: paper.DownloadStatusSuccess, Bytes: 42, CompletedAt: ts},
-				{PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "2", Version: "v1"}, Status: paper.DownloadStatusFailed, Category: "fetch", Description: "boom", CompletedAt: ts},
+			Entries: []pdfdownload.EntryResult{
+				{PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "1", Version: "v1"}, Status: pdfdownload.StatusSuccess, Bytes: 42, CompletedAt: ts},
+				{PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "2", Version: "v1"}, Status: pdfdownload.StatusFailed, Category: "fetch", Description: "boom", CompletedAt: ts},
 			},
 		}
 

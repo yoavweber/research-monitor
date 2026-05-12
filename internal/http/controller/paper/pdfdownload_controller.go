@@ -1,21 +1,30 @@
 package paper
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 )
+
+// PDFDownloadReader is the consumer-defined read surface for the
+// per-job status and SSE endpoints. The concrete *pdfdownload.Registry
+// satisfies it implicitly.
+type PDFDownloadReader interface {
+	Snapshot(ctx context.Context, id pdfdownload.JobID) (pdfdownload.JobSnapshot, error)
+	Subscribe(ctx context.Context, id pdfdownload.JobID) (backlog []pdfdownload.Event, live <-chan pdfdownload.Event, err error)
+}
 
 // PDFDownloadController hosts the per-job read endpoints (status JSON +
 // SSE stream) for PDF-download jobs scheduled by /api/arxiv/fetch.
 type PDFDownloadController struct {
-	reader paper.PDFDownloadReader
+	reader PDFDownloadReader
 }
 
-func NewPDFDownloadController(reader paper.PDFDownloadReader) *PDFDownloadController {
+func NewPDFDownloadController(reader PDFDownloadReader) *PDFDownloadController {
 	return &PDFDownloadController{reader: reader}
 }
 
@@ -33,9 +42,9 @@ func NewPDFDownloadController(reader paper.PDFDownloadReader) *PDFDownloadContro
 // @Security     APIToken
 // @Router       /arxiv/downloads/{job_id} [get]
 func (ctrl *PDFDownloadController) Status(c *gin.Context) {
-	id := paper.DownloadJobID(c.Param("job_id"))
+	id := pdfdownload.JobID(c.Param("job_id"))
 
-	snap, err := ctrl.reader.SnapshotPDFDownloadJob(c.Request.Context(), id)
+	snap, err := ctrl.reader.Snapshot(c.Request.Context(), id)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -67,9 +76,9 @@ func (ctrl *PDFDownloadController) Status(c *gin.Context) {
 // @Security     APIToken
 // @Router       /arxiv/downloads/{job_id}/stream [get]
 func (ctrl *PDFDownloadController) Stream(c *gin.Context) {
-	id := paper.DownloadJobID(c.Param("job_id"))
+	id := pdfdownload.JobID(c.Param("job_id"))
 
-	backlog, live, err := ctrl.reader.SubscribePDFDownloadJob(c.Request.Context(), id)
+	backlog, live, err := ctrl.reader.Subscribe(c.Request.Context(), id)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -106,9 +115,9 @@ func (ctrl *PDFDownloadController) Stream(c *gin.Context) {
 	}
 }
 
-// writeDownloadEvent serializes a DownloadEvent into the matching SSE
-// frame and returns true after emitting a terminal Summary.
-func writeDownloadEvent(c *gin.Context, ev paper.DownloadEvent) (terminal bool) {
+// writeDownloadEvent serializes an Event into the matching SSE frame
+// and returns true after emitting a terminal Summary.
+func writeDownloadEvent(c *gin.Context, ev pdfdownload.Event) (terminal bool) {
 	switch {
 	case ev.Summary != nil:
 		s := ev.Summary

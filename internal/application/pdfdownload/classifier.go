@@ -8,11 +8,10 @@ import (
 	"errors"
 	"regexp"
 
-	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 )
 
-// sanitizedMaxLen bounds the description carried on a DownloadEntryResult.
+// sanitizedMaxLen bounds the description carried on an EntryResult.
 // SSE frames and JSON status payloads include this string verbatim; a hard
 // cap keeps a single failure from inflating a frame and protects the SSE
 // fan-out from accidentally amplifying very long upstream messages.
@@ -41,23 +40,23 @@ var bearerRegexp = regexp.MustCompile(`(?i)\bbearer\s+\S+`)
 var inlineSecretRegexp = regexp.MustCompile(`(?i)\b(password|passwd|secret|token|api_key|apikey)\s*=\s*\S+`)
 
 // classify maps a Store.Ensure outcome to the wire-level
-// (status, category, description) triple recorded on each DownloadEntryResult.
+// (status, category, description) triple recorded on each EntryResult.
 //
 // The category strings are the pdf.Category* constants for the three known
 // sentinels and the literal "unknown" otherwise. Description is the result of
 // sanitize(err); empty on nil err.
-func classify(err error) (paper.DownloadEntryStatus, string, string) {
+func classify(err error) (EntryStatus, string, string) {
 	switch {
 	case err == nil:
-		return paper.DownloadStatusSuccess, "", ""
+		return StatusSuccess, "", ""
 	case errors.Is(err, pdf.ErrInvalidKey):
-		return paper.DownloadStatusFailed, pdf.CategoryInvalidKey, sanitize(err)
+		return StatusFailed, pdf.CategoryInvalidKey, sanitize(err)
 	case errors.Is(err, pdf.ErrFetch):
-		return paper.DownloadStatusFailed, pdf.CategoryFetch, sanitize(err)
+		return StatusFailed, pdf.CategoryFetch, sanitize(err)
 	case errors.Is(err, pdf.ErrStore):
-		return paper.DownloadStatusFailed, pdf.CategoryStore, sanitize(err)
+		return StatusFailed, pdf.CategoryStore, sanitize(err)
 	default:
-		return paper.DownloadStatusFailed, categoryUnknown, sanitize(err)
+		return StatusFailed, categoryUnknown, sanitize(err)
 	}
 }
 

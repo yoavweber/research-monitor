@@ -1,7 +1,7 @@
 // Package arxiv implements the arxiv-side fetch+persist orchestrator. It is a
 // pure orchestrator: it invokes a paper.Fetcher, persists each returned entry
 // through paper.Repository, surfaces per-entry is_new results to its caller,
-// and schedules PDF downloads for the IsNew entries through paper.PDFScheduler.
+// and schedules PDF downloads for the IsNew entries through DownloadScheduler.
 // It never inspects HTTP status codes, bytes, XML, URLs, or transport-level
 // errors; paper.* sentinels are relayed verbatim.
 package arxiv
@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 )
@@ -25,12 +26,12 @@ type Result struct {
 	IsNew bool
 }
 
-// FetchResult pairs the persisted entries with the initial
-// DownloadJobSnapshot returned by the scheduler. Job is the zero value
-// when no IsNew entries existed or scheduling failed.
+// FetchResult pairs the persisted entries with the initial JobSnapshot
+// returned by the scheduler. Job is the zero value when no IsNew entries
+// existed or scheduling failed.
 type FetchResult struct {
 	Entries []Result
-	Job     paper.DownloadJobSnapshot
+	Job     pdfdownload.JobSnapshot
 }
 
 // UseCase is the arxiv application port. The HTTP controller depends on this
@@ -39,6 +40,13 @@ type FetchResult struct {
 // in domain/paper.
 type UseCase interface {
 	Fetch(ctx context.Context) (FetchResult, error)
+}
+
+// DownloadScheduler is the consumer-defined view of the pdfdownload
+// registry that arxiv depends on. The concrete *pdfdownload.Registry
+// satisfies it implicitly; arxiv tests can hand-roll a fake.
+type DownloadScheduler interface {
+	Schedule(ctx context.Context, requests []pdfdownload.Request) (pdfdownload.JobSnapshot, error)
 }
 
 // arxivUseCase orchestrates the arxiv fetch + per-entry persist sequence,
@@ -50,7 +58,7 @@ type arxivUseCase struct {
 	repo      paper.Repository
 	log       shared.Logger
 	query     paper.Query
-	scheduler paper.PDFScheduler
+	scheduler DownloadScheduler
 }
 
 // NewArxivUseCase returns the arxiv UseCase. Fetcher, repository, logger,
@@ -60,7 +68,7 @@ func NewArxivUseCase(
 	repo paper.Repository,
 	log shared.Logger,
 	query paper.Query,
-	scheduler paper.PDFScheduler,
+	scheduler DownloadScheduler,
 ) UseCase {
 	return &arxivUseCase{
 		fetcher:   fetcher,
@@ -76,7 +84,7 @@ func NewArxivUseCase(
 // fetcher (R5.7). On any save failure the loop aborts and returns
 // (zero, saveErr) — no partial slice is leaked to the caller (R5.5).
 // After persistence, the IsNew subset is scheduled for PDF download via
-// paper.PDFScheduler; the returned snapshot rides along on FetchResult.Job.
+// DownloadScheduler; the returned snapshot rides along on FetchResult.Job.
 func (u *arxivUseCase) Fetch(ctx context.Context) (FetchResult, error) {
 	entries, err := u.fetcher.Fetch(ctx, u.query)
 	if err != nil {
@@ -122,8 +130,8 @@ func (u *arxivUseCase) Fetch(ctx context.Context) (FetchResult, error) {
 
 	// Trigger location may move behind an explicit user-confirmation step
 	// in a future spec.
-	requests := paper.NewPDFDownloadRequests(newEntries)
-	snapshot, schedErr := u.scheduler.SchedulePDFDownloads(ctx, requests)
+	requests := pdfdownload.RequestsFromEntries(newEntries)
+	snapshot, schedErr := u.scheduler.Schedule(ctx, requests)
 	if schedErr != nil {
 		u.log.ErrorContext(ctx, "paper.fetch.schedule_failed",
 			"source", paper.SourceArxiv,

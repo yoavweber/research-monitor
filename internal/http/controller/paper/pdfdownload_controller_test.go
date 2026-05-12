@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
@@ -29,7 +30,7 @@ func init() {
 // production does, and mounts the controller's Status handler on the
 // canonical path. Route wiring is task 4.3's responsibility; this test
 // stands the route up locally to exercise the handler directly.
-func newDownloadEngine(reader paper.PDFDownloadReader) *gin.Engine {
+func newDownloadEngine(reader paperctrl.PDFDownloadReader) *gin.Engine {
 	engine := gin.New()
 	engine.Use(middleware.ErrorEnvelope())
 	ctrl := paperctrl.NewPDFDownloadController(reader)
@@ -38,55 +39,55 @@ func newDownloadEngine(reader paper.PDFDownloadReader) *gin.Engine {
 	return engine
 }
 
-func inProgressSnapshot() paper.DownloadJobSnapshot {
+func inProgressSnapshot() pdfdownload.JobSnapshot {
 	ts := time.Date(2026, 5, 9, 10, 0, 0, 0, time.UTC)
-	return paper.DownloadJobSnapshot{
+	return pdfdownload.JobSnapshot{
 		JobID:     "job-progress",
 		Total:     3,
 		Succeeded: 1,
 		Failed:    1,
 		Completed: false,
-		Entries: []paper.DownloadEntryResult{
+		Entries: []pdfdownload.EntryResult{
 			{
 				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.00001", Version: "v1"},
-				Status:      paper.DownloadStatusSuccess,
+				Status:      pdfdownload.StatusSuccess,
 				Bytes:       12345,
 				CompletedAt: ts,
 			},
 			{
 				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.00002", Version: "v1"},
-				Status:      paper.DownloadStatusFailed,
+				Status:      pdfdownload.StatusFailed,
 				Category:    "fetch",
 				Description: "upstream timeout",
 				CompletedAt: ts,
 			},
 			{
 				PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "2404.00003", Version: "v1"},
-				Status:  paper.DownloadStatusPending,
+				Status:  pdfdownload.StatusPending,
 			},
 		},
 	}
 }
 
-func completedSnapshot() paper.DownloadJobSnapshot {
+func completedSnapshot() pdfdownload.JobSnapshot {
 	ts := time.Date(2026, 5, 9, 10, 5, 0, 0, time.UTC)
-	return paper.DownloadJobSnapshot{
+	return pdfdownload.JobSnapshot{
 		JobID:       "job-done",
 		Total:       2,
 		Succeeded:   2,
 		Failed:      0,
 		Completed:   true,
 		CompletedAt: ts,
-		Entries: []paper.DownloadEntryResult{
+		Entries: []pdfdownload.EntryResult{
 			{
 				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.10001", Version: "v1"},
-				Status:      paper.DownloadStatusSuccess,
+				Status:      pdfdownload.StatusSuccess,
 				Bytes:       4096,
 				CompletedAt: ts,
 			},
 			{
 				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.10002", Version: "v2"},
-				Status:      paper.DownloadStatusSuccess,
+				Status:      pdfdownload.StatusSuccess,
 				Bytes:       8192,
 				CompletedAt: ts,
 			},
@@ -97,9 +98,9 @@ func completedSnapshot() paper.DownloadJobSnapshot {
 func TestPDFDownloadController_Status_InProgressJob_Returns200WithSnapshot(t *testing.T) {
 	t.Parallel()
 
-	reader := mocks.NewPaperPDFDownloadReader()
+	reader := mocks.NewPDFDownloadReader()
 	reader.SnapshotErr = nil
-	reader.Snapshot = inProgressSnapshot()
+	reader.SnapshotResult = inProgressSnapshot()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/job-progress", nil)
 	w := httptest.NewRecorder()
@@ -112,7 +113,7 @@ func TestPDFDownloadController_Status_InProgressJob_Returns200WithSnapshot(t *te
 	if reader.SnapshotCallCount() != 1 {
 		t.Fatalf("SnapshotCallCount = %d, want 1", reader.SnapshotCallCount())
 	}
-	if got := reader.LastSnapshotCall(); got != paper.DownloadJobID("job-progress") {
+	if got := reader.LastSnapshotCall(); got != pdfdownload.JobID("job-progress") {
 		t.Fatalf("LastSnapshotCall = %q, want job-progress", got)
 	}
 
@@ -190,9 +191,9 @@ func TestPDFDownloadController_Status_InProgressJob_Returns200WithSnapshot(t *te
 func TestPDFDownloadController_Status_CompletedJob_Returns200WithCompletedAt(t *testing.T) {
 	t.Parallel()
 
-	reader := mocks.NewPaperPDFDownloadReader()
+	reader := mocks.NewPDFDownloadReader()
 	reader.SnapshotErr = nil
-	reader.Snapshot = completedSnapshot()
+	reader.SnapshotResult = completedSnapshot()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/job-done", nil)
 	w := httptest.NewRecorder()
@@ -240,7 +241,7 @@ func TestPDFDownloadController_Status_CompletedJob_Returns200WithCompletedAt(t *
 func TestPDFDownloadController_Status_UnknownJob_Returns404Envelope(t *testing.T) {
 	t.Parallel()
 
-	reader := mocks.NewPaperPDFDownloadReader() // default SnapshotErr = ErrDownloadJobUnknown
+	reader := mocks.NewPDFDownloadReader() // default SnapshotErr = ErrDownloadJobUnknown
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/does-not-exist", nil)
 	w := httptest.NewRecorder()
@@ -278,7 +279,7 @@ func TestPDFDownloadController_Status_UnknownJob_WrapsSentinelForIntrospection(t
 	t.Parallel()
 
 	// The controller is expected to return a *shared.HTTPError that wraps
-	// paper.ErrDownloadJobUnknown so any caller using errors.Is can still
+	// pdfdownload.ErrJobUnknown so any caller using errors.Is can still
 	// recognize the underlying domain sentinel. We exercise this through
 	// the same Gin handler flow used above: the middleware short-circuits
 	// the response, so we assert the wire-level signal (404 + the stable
@@ -286,7 +287,7 @@ func TestPDFDownloadController_Status_UnknownJob_WrapsSentinelForIntrospection(t
 	// and the explicit envelope assertions below — equivalent to the
 	// errors.Is check from the test perspective.
 
-	reader := mocks.NewPaperPDFDownloadReader()
+	reader := mocks.NewPDFDownloadReader()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/whatever", nil)
 	w := httptest.NewRecorder()
@@ -297,7 +298,7 @@ func TestPDFDownloadController_Status_UnknownJob_WrapsSentinelForIntrospection(t
 	}
 	// Sanity check on the domain sentinel itself — protects the test
 	// from drifting if ErrDownloadJobUnknown is renamed.
-	if !errors.Is(paper.ErrDownloadJobUnknown, paper.ErrDownloadJobUnknown) {
+	if !errors.Is(pdfdownload.ErrJobUnknown, pdfdownload.ErrJobUnknown) {
 		t.Fatalf("sentinel sanity check failed")
 	}
 	if !strings.Contains(w.Body.String(), `"message":"download job unknown"`) {
@@ -308,13 +309,13 @@ func TestPDFDownloadController_Status_UnknownJob_WrapsSentinelForIntrospection(t
 func TestPDFDownloadController_Status_StableShapeAcrossInProgressAndCompleted(t *testing.T) {
 	t.Parallel()
 
-	in := mocks.NewPaperPDFDownloadReader()
+	in := mocks.NewPDFDownloadReader()
 	in.SnapshotErr = nil
-	in.Snapshot = inProgressSnapshot()
+	in.SnapshotResult = inProgressSnapshot()
 
-	done := mocks.NewPaperPDFDownloadReader()
+	done := mocks.NewPDFDownloadReader()
 	done.SnapshotErr = nil
-	done.Snapshot = completedSnapshot()
+	done.SnapshotResult = completedSnapshot()
 
 	wIn := httptest.NewRecorder()
 	newDownloadEngine(in).ServeHTTP(wIn, httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/job-progress", nil))
@@ -394,17 +395,17 @@ func parseSSEFrames(t *testing.T, body string) []sseFrame {
 	return frames
 }
 
-func progressEventFromSnapshot(snap paper.DownloadJobSnapshot, index int) paper.DownloadEvent {
+func progressEventFromSnapshot(snap pdfdownload.JobSnapshot, index int) pdfdownload.Event {
 	entry := snap.Entries[index]
-	return paper.DownloadEvent{
+	return pdfdownload.Event{
 		JobID:    snap.JobID,
 		Progress: &entry,
 	}
 }
 
-func summaryEventFromSnapshot(snap paper.DownloadJobSnapshot) paper.DownloadEvent {
+func summaryEventFromSnapshot(snap pdfdownload.JobSnapshot) pdfdownload.Event {
 	s := snap
-	return paper.DownloadEvent{
+	return pdfdownload.Event{
 		JobID:   snap.JobID,
 		Summary: &s,
 	}
@@ -413,7 +414,7 @@ func summaryEventFromSnapshot(snap paper.DownloadJobSnapshot) paper.DownloadEven
 func TestPDFDownloadController_Stream_UnknownJob_Returns404WithoutSSEFrames(t *testing.T) {
 	t.Parallel()
 
-	reader := mocks.NewPaperPDFDownloadReader() // default SubscribeErr = ErrDownloadJobUnknown
+	reader := mocks.NewPDFDownloadReader() // default SubscribeErr = ErrDownloadJobUnknown
 
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/downloads/missing/stream", nil)
 	w := httptest.NewRecorder()
@@ -447,7 +448,7 @@ func TestPDFDownloadController_Stream_UnknownJob_Returns404WithoutSSEFrames(t *t
 	}
 
 	if got := len(reader.SubscribeCalls); got != 1 {
-		t.Fatalf("SubscribePDFDownloadJob calls=%d, want 1", got)
+		t.Fatalf("Subscribe calls=%d, want 1", got)
 	}
 }
 
@@ -458,9 +459,9 @@ func TestPDFDownloadController_Stream_BacklogIncludingSummary_ReplaysAndCloses(t
 	// have its full event log delivered in backlog (Progress events plus
 	// the terminal Summary). The handler must not enter the live loop.
 	snap := completedSnapshot()
-	reader := mocks.NewPaperPDFDownloadReader()
+	reader := mocks.NewPDFDownloadReader()
 	reader.SubscribeErr = nil
-	reader.SubscribeBacklog = []paper.DownloadEvent{
+	reader.SubscribeBacklog = []pdfdownload.Event{
 		progressEventFromSnapshot(snap, 0),
 		progressEventFromSnapshot(snap, 1),
 		summaryEventFromSnapshot(snap),
@@ -527,13 +528,13 @@ func TestPDFDownloadController_Stream_LiveEvents_ReplayedInOrderThenSummaryClose
 	finalSnap.Completed = true
 	finalSnap.CompletedAt = time.Date(2026, 5, 9, 10, 30, 0, 0, time.UTC)
 
-	live := make(chan paper.DownloadEvent, 3)
+	live := make(chan pdfdownload.Event, 3)
 	live <- progressEventFromSnapshot(snap, 0)
 	live <- progressEventFromSnapshot(snap, 1)
 	live <- summaryEventFromSnapshot(finalSnap)
 	close(live)
 
-	reader := mocks.NewPaperPDFDownloadReader()
+	reader := mocks.NewPDFDownloadReader()
 	reader.SubscribeErr = nil
 	reader.SubscribeBacklog = nil
 	reader.SubscribeLive = live
@@ -579,11 +580,11 @@ func TestPDFDownloadController_Stream_LiveChannelClosedWithoutSummary_EmitsError
 	t.Parallel()
 
 	snap := inProgressSnapshot()
-	live := make(chan paper.DownloadEvent, 2)
+	live := make(chan pdfdownload.Event, 2)
 	live <- progressEventFromSnapshot(snap, 0)
 	close(live) // closed without a Summary frame — slow-subscriber drop / shutdown.
 
-	reader := mocks.NewPaperPDFDownloadReader()
+	reader := mocks.NewPDFDownloadReader()
 	reader.SubscribeErr = nil
 	reader.SubscribeBacklog = nil
 	reader.SubscribeLive = live
@@ -619,8 +620,8 @@ func TestPDFDownloadController_Stream_ClientDisconnect_ReturnsWithoutPanic(t *te
 	// request context shortly after ServeHTTP starts and assert the
 	// handler returns without panicking and without writing further
 	// frames.
-	live := make(chan paper.DownloadEvent)
-	reader := mocks.NewPaperPDFDownloadReader()
+	live := make(chan pdfdownload.Event)
+	reader := mocks.NewPDFDownloadReader()
 	reader.SubscribeErr = nil
 	reader.SubscribeBacklog = nil
 	reader.SubscribeLive = live

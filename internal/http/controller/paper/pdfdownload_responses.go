@@ -3,6 +3,7 @@ package paper
 import (
 	"time"
 
+	"github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 )
 
@@ -63,7 +64,7 @@ func ToPaperIDDTO(id paper.ID) PaperIDDTO {
 // ToDownloadEntryResultDTO maps a per-entry result into its wire shape.
 // Pending results carry a zero CompletedAt; this is rendered as an
 // omitted field via the *time.Time pointer.
-func ToDownloadEntryResultDTO(r paper.DownloadEntryResult) DownloadEntryResultDTO {
+func ToDownloadEntryResultDTO(r pdfdownload.EntryResult) DownloadEntryResultDTO {
 	dto := DownloadEntryResultDTO{
 		PaperID:     ToPaperIDDTO(r.PaperID),
 		Status:      string(r.Status),
@@ -78,10 +79,10 @@ func ToDownloadEntryResultDTO(r paper.DownloadEntryResult) DownloadEntryResultDT
 	return dto
 }
 
-// ToDownloadJobSnapshotDTO maps the domain snapshot into its wire shape.
-// A nil or empty Entries slice maps to a non-nil zero-length slice so the
+// ToDownloadJobSnapshotDTO maps the snapshot into its wire shape. A nil
+// or empty Entries slice maps to a non-nil zero-length slice so the
 // JSON renders as "entries":[] rather than "entries":null.
-func ToDownloadJobSnapshotDTO(s paper.DownloadJobSnapshot) DownloadJobSnapshotDTO {
+func ToDownloadJobSnapshotDTO(s pdfdownload.JobSnapshot) DownloadJobSnapshotDTO {
 	entries := make([]DownloadEntryResultDTO, 0, len(s.Entries))
 	for _, e := range s.Entries {
 		entries = append(entries, ToDownloadEntryResultDTO(e))

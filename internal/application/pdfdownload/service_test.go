@@ -71,10 +71,10 @@ func (g *gatedStore) Ensure(ctx context.Context, key pdf.Key) (pdf.Locator, erro
 	return g.inner.Ensure(ctx, key)
 }
 
-func sampleRequests(n int) []paper.PDFDownloadRequest {
-	out := make([]paper.PDFDownloadRequest, 0, n)
+func sampleRequests(n int) []pdfdownload.Request {
+	out := make([]pdfdownload.Request, 0, n)
 	for i := 0; i < n; i++ {
-		out = append(out, paper.PDFDownloadRequest{
+		out = append(out, pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0000"+string(rune('1'+i)), Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.0000" + string(rune('1'+i)) + "v1.pdf",
 		})
@@ -90,7 +90,7 @@ func TestRegistry_SchedulePDFDownloads(t *testing.T) {
 		reg, logger, _ := newRegistryForTest(t)
 		reqs := sampleRequests(1)
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		snap, err := reg.Schedule(context.Background(), reqs)
 
 		if err != nil {
 			t.Fatalf("SchedulePDFDownloads: unexpected error: %v", err)
@@ -114,7 +114,7 @@ func TestRegistry_SchedulePDFDownloads(t *testing.T) {
 			t.Fatalf("Entries len = %d, want %d", len(snap.Entries), len(reqs))
 		}
 		for i, e := range snap.Entries {
-			if e.Status != paper.DownloadStatusPending {
+			if e.Status != pdfdownload.StatusPending {
 				t.Errorf("Entries[%d].Status = %q, want pending", i, e.Status)
 			}
 			if e.PaperID != reqs[i].PaperID {
@@ -159,12 +159,12 @@ func TestRegistry_SchedulePDFDownloads(t *testing.T) {
 		t.Parallel()
 		reg, logger, _ := newRegistryForTest(t)
 
-		seen := map[paper.DownloadJobID]struct{}{}
+		seen := map[pdfdownload.JobID]struct{}{}
 		const calls = 5
 		for i := 0; i < calls; i++ {
 			reqs := sampleRequests(2)
 
-			snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+			snap, err := reg.Schedule(context.Background(), reqs)
 
 			if err != nil {
 				t.Fatalf("call %d: unexpected error: %v", i, err)
@@ -196,12 +196,12 @@ func TestRegistry_SchedulePDFDownloads(t *testing.T) {
 		t.Parallel()
 		reg, logger, _ := newRegistryForTest(t)
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), nil)
+		snap, err := reg.Schedule(context.Background(), nil)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		zero := paper.DownloadJobSnapshot{}
+		zero := pdfdownload.JobSnapshot{}
 		if !reflect.DeepEqual(snap, zero) {
 			t.Errorf("snapshot = %+v, want zero value", snap)
 		}
@@ -219,7 +219,7 @@ func TestRegistry_SchedulePDFDownloads(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		snap, err := reg.SchedulePDFDownloads(ctx, reqs)
+		snap, err := reg.Schedule(ctx, reqs)
 
 		if err != nil {
 			t.Fatalf("Schedule must not consult ctx for state mutation; got error %v", err)
@@ -240,9 +240,9 @@ func TestRegistry_Reader_UnknownID(t *testing.T) {
 		t.Parallel()
 		reg, _, _ := newRegistryForTest(t)
 
-		_, err := reg.SnapshotPDFDownloadJob(context.Background(), paper.DownloadJobID("does-not-exist"))
+		_, err := reg.Snapshot(context.Background(), pdfdownload.JobID("does-not-exist"))
 
-		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+		if !errors.Is(err, pdfdownload.ErrJobUnknown) {
 			t.Fatalf("err = %v, want ErrDownloadJobUnknown", err)
 		}
 	})
@@ -251,9 +251,9 @@ func TestRegistry_Reader_UnknownID(t *testing.T) {
 		t.Parallel()
 		reg, _, _ := newRegistryForTest(t)
 
-		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), paper.DownloadJobID("does-not-exist"))
+		backlog, live, err := reg.Subscribe(context.Background(), pdfdownload.JobID("does-not-exist"))
 
-		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+		if !errors.Is(err, pdfdownload.ErrJobUnknown) {
 			t.Fatalf("err = %v, want ErrDownloadJobUnknown", err)
 		}
 		if backlog != nil {
@@ -283,23 +283,23 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		const n = 4
-		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		reqs := make([]pdfdownload.Request, 0, n)
 		for i := 0; i < n; i++ {
-			req := paper.PDFDownloadRequest{
+			req := pdfdownload.Request{
 				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0snap0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/snap-" + string(rune('1'+i)) + ".pdf",
 			}
-			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
 			reqs = append(reqs, req)
 		}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		snap, err := reg.Schedule(context.Background(), reqs)
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
 
 		// Subscribe BEFORE releasing the worker so live carries every event.
-		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		backlog, live, err := reg.Subscribe(context.Background(), snap.JobID)
 		if err != nil {
 			t.Fatalf("Subscribe: %v", err)
 		}
@@ -316,7 +316,7 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 			t.Fatalf("events len = %d, want %d", len(events), n+1)
 		}
 
-		final, err := reg.SnapshotPDFDownloadJob(context.Background(), snap.JobID)
+		final, err := reg.Snapshot(context.Background(), snap.JobID)
 		if err != nil {
 			t.Fatalf("Snapshot: %v", err)
 		}
@@ -372,30 +372,30 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.copy01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/copy.pdf",
 		}
-		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("xx")}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("xx")}
 
-		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		schedSnap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
 		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
 
-		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		snap, err := reg.Snapshot(context.Background(), schedSnap.JobID)
 		if err != nil {
 			t.Fatalf("Snapshot: %v", err)
 		}
 		// Mutate the returned slice; the next snapshot must be unaffected.
-		snap.Entries[0].Status = paper.DownloadStatusFailed
+		snap.Entries[0].Status = pdfdownload.StatusFailed
 
-		snap2, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		snap2, err := reg.Snapshot(context.Background(), schedSnap.JobID)
 		if err != nil {
 			t.Fatalf("Snapshot 2: %v", err)
 		}
-		if snap2.Entries[0].Status != paper.DownloadStatusSuccess {
+		if snap2.Entries[0].Status != pdfdownload.StatusSuccess {
 			t.Errorf("registry-internal entry was mutated through returned snapshot; status = %q", snap2.Entries[0].Status)
 		}
 	})
@@ -422,19 +422,19 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.prog01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/prog.pdf",
 		}
-		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("p")}
+		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("p")}
 
-		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		schedSnap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
 
 		// Worker is gated, so the entry is still Pending. R5.2.
-		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		snap, err := reg.Snapshot(context.Background(), schedSnap.JobID)
 		if err != nil {
 			t.Fatalf("Snapshot: %v", err)
 		}
@@ -444,7 +444,7 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 		if snap.Succeeded != 0 || snap.Failed != 0 {
 			t.Errorf("counts = (succ=%d, fail=%d), want zero for gated job", snap.Succeeded, snap.Failed)
 		}
-		if len(snap.Entries) != 1 || snap.Entries[0].Status != paper.DownloadStatusPending {
+		if len(snap.Entries) != 1 || snap.Entries[0].Status != pdfdownload.StatusPending {
 			t.Errorf("entries = %+v, want one pending", snap.Entries)
 		}
 	})
@@ -468,17 +468,17 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		const n = 4
-		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		reqs := make([]pdfdownload.Request, 0, n)
 		for i := 0; i < n; i++ {
-			req := paper.PDFDownloadRequest{
+			req := pdfdownload.Request{
 				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0sub0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/sub-" + string(rune('1'+i)) + ".pdf",
 			}
-			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("b")}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("b")}
 			reqs = append(reqs, req)
 		}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		snap, err := reg.Schedule(context.Background(), reqs)
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
@@ -486,12 +486,12 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 		// Subscribe BEFORE the worker is released — both backlog and live
 		// must combine to exactly n+1 events with no duplicates.
 		close(release)
-		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		backlog, live, err := reg.Subscribe(context.Background(), snap.JobID)
 		if err != nil {
 			t.Fatalf("Subscribe: %v", err)
 		}
 
-		got := append([]paper.DownloadEvent(nil), backlog...)
+		got := append([]pdfdownload.Event(nil), backlog...)
 		liveEvents, closed := drainEvents(live, 2*time.Second)
 		if !closed {
 			t.Fatalf("live channel did not close; got %d live events on top of %d backlog", len(liveEvents), len(backlog))
@@ -526,19 +526,19 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.post01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/post.pdf",
 		}
-		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("done")}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("done")}
 
-		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		schedSnap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
 		waitForJobCompletion(t, reg, schedSnap.JobID, 2*time.Second)
 
-		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), schedSnap.JobID)
+		backlog, live, err := reg.Subscribe(context.Background(), schedSnap.JobID)
 		if err != nil {
 			t.Fatalf("Subscribe post-completion: %v", err)
 		}
@@ -580,17 +580,17 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		const n = 12
-		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		reqs := make([]pdfdownload.Request, 0, n)
 		for i := 0; i < n; i++ {
-			req := paper.PDFDownloadRequest{
+			req := pdfdownload.Request{
 				PaperID: paper.ID{Source: "arxiv", SourceID: fmt.Sprintf("2404.0cnt%02d", i), Version: "v1"},
 				PDFURL:  fmt.Sprintf("https://arxiv.org/pdf/cnt-%02d.pdf", i),
 			}
-			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("c")}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("c")}
 			reqs = append(reqs, req)
 		}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		snap, err := reg.Schedule(context.Background(), reqs)
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
@@ -609,7 +609,7 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				backlog, live, subErr := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+				backlog, live, subErr := reg.Subscribe(context.Background(), snap.JobID)
 				if subErr != nil {
 					errs <- fmt.Errorf("subscribe: %w", subErr)
 					return
@@ -665,11 +665,11 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 // waitForJobCompletion polls SnapshotPDFDownloadJob for jobID up to
 // deadline. It surfaces a hard failure if the worker does not finish in
 // time so the suite cannot hang under regression.
-func waitForJobCompletion(t *testing.T, reg *pdfdownload.Registry, jobID paper.DownloadJobID, deadline time.Duration) {
+func waitForJobCompletion(t *testing.T, reg *pdfdownload.Registry, jobID pdfdownload.JobID, deadline time.Duration) {
 	t.Helper()
 	end := time.Now().Add(deadline)
 	for time.Now().Before(end) {
-		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), jobID)
+		snap, err := reg.Snapshot(context.Background(), jobID)
 		if err == nil && snap.Completed {
 			return
 		}
@@ -680,9 +680,9 @@ func waitForJobCompletion(t *testing.T, reg *pdfdownload.Registry, jobID paper.D
 
 // jobEntries returns the per-entry results for jobID via the public
 // snapshot port. Test helper to keep call sites terse.
-func jobEntries(t *testing.T, reg *pdfdownload.Registry, jobID paper.DownloadJobID) []paper.DownloadEntryResult {
+func jobEntries(t *testing.T, reg *pdfdownload.Registry, jobID pdfdownload.JobID) []pdfdownload.EntryResult {
 	t.Helper()
-	snap, err := reg.SnapshotPDFDownloadJob(context.Background(), jobID)
+	snap, err := reg.Snapshot(context.Background(), jobID)
 	if err != nil {
 		t.Fatalf("SnapshotPDFDownloadJob: %v", err)
 	}
@@ -703,19 +703,19 @@ func TestRegistry_Worker(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00001", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00001v1.pdf",
 		}
 		key := pdf.Key{
 			SourceType: req.PaperID.Source,
-			SourceID:   req.PaperID.PDFArtifactKey(),
+			SourceID:   pdfdownload.PDFArtifactKey(req.PaperID),
 			URL:        req.PDFURL,
 		}
 		body := []byte("hello-pdf-bytes")
 		store.Responses[key] = mocks.PDFStoreResponse{Body: body}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		snap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
@@ -727,8 +727,8 @@ func TestRegistry_Worker(t *testing.T) {
 			t.Fatalf("entries len = %d, want 1", len(entries))
 		}
 		got := entries[0]
-		if got.Status != paper.DownloadStatusSuccess {
-			t.Errorf("status = %q, want %q", got.Status, paper.DownloadStatusSuccess)
+		if got.Status != pdfdownload.StatusSuccess {
+			t.Errorf("status = %q, want %q", got.Status, pdfdownload.StatusSuccess)
 		}
 		if got.Bytes != len(body) {
 			t.Errorf("bytes = %d, want %d", got.Bytes, len(body))
@@ -750,8 +750,8 @@ func TestRegistry_Worker(t *testing.T) {
 		if found == nil {
 			t.Fatalf("expected Info log pdfdownload.entry.completed; records=%+v", logger.Records)
 		}
-		if found.Args["status"] != string(paper.DownloadStatusSuccess) {
-			t.Errorf("log status = %v, want %q", found.Args["status"], paper.DownloadStatusSuccess)
+		if found.Args["status"] != string(pdfdownload.StatusSuccess) {
+			t.Errorf("log status = %v, want %q", found.Args["status"], pdfdownload.StatusSuccess)
 		}
 		if got := found.Args["job_id"]; got != string(snap.JobID) {
 			t.Errorf("log job_id = %v, want %v", got, snap.JobID)
@@ -772,21 +772,21 @@ func TestRegistry_Worker(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		badReq := paper.PDFDownloadRequest{
+		badReq := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00001", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00001v1.pdf",
 		}
-		goodReq := paper.PDFDownloadRequest{
+		goodReq := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00002", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00002v1.pdf",
 		}
-		badKey := pdf.Key{SourceType: badReq.PaperID.Source, SourceID: badReq.PaperID.PDFArtifactKey(), URL: badReq.PDFURL}
-		goodKey := pdf.Key{SourceType: goodReq.PaperID.Source, SourceID: goodReq.PaperID.PDFArtifactKey(), URL: goodReq.PDFURL}
+		badKey := pdf.Key{SourceType: badReq.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(badReq.PaperID), URL: badReq.PDFURL}
+		goodKey := pdf.Key{SourceType: goodReq.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(goodReq.PaperID), URL: goodReq.PDFURL}
 		store.Responses[badKey] = mocks.PDFStoreResponse{Err: fmt.Errorf("upstream 500: %w", pdf.ErrFetch)}
 		goodBody := []byte("ok-bytes-456")
 		store.Responses[goodKey] = mocks.PDFStoreResponse{Body: goodBody}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{badReq, goodReq})
+		snap, err := reg.Schedule(context.Background(), []pdfdownload.Request{badReq, goodReq})
 
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
@@ -797,8 +797,8 @@ func TestRegistry_Worker(t *testing.T) {
 		if len(entries) != 2 {
 			t.Fatalf("entries len = %d, want 2", len(entries))
 		}
-		if entries[0].Status != paper.DownloadStatusFailed {
-			t.Errorf("entries[0].Status = %q, want %q", entries[0].Status, paper.DownloadStatusFailed)
+		if entries[0].Status != pdfdownload.StatusFailed {
+			t.Errorf("entries[0].Status = %q, want %q", entries[0].Status, pdfdownload.StatusFailed)
 		}
 		if entries[0].Category != pdf.CategoryFetch {
 			t.Errorf("entries[0].Category = %q, want %q", entries[0].Category, pdf.CategoryFetch)
@@ -806,8 +806,8 @@ func TestRegistry_Worker(t *testing.T) {
 		if entries[0].Description == "" {
 			t.Errorf("entries[0].Description must not be empty on failure")
 		}
-		if entries[1].Status != paper.DownloadStatusSuccess {
-			t.Errorf("entries[1].Status = %q, want %q (loop must continue past failure)", entries[1].Status, paper.DownloadStatusSuccess)
+		if entries[1].Status != pdfdownload.StatusSuccess {
+			t.Errorf("entries[1].Status = %q, want %q (loop must continue past failure)", entries[1].Status, pdfdownload.StatusSuccess)
 		}
 		if entries[1].Bytes != len(goodBody) {
 			t.Errorf("entries[1].Bytes = %d, want %d", entries[1].Bytes, len(goodBody))
@@ -839,17 +839,17 @@ func TestRegistry_Worker(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00003", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00003v1.pdf",
 		}
-		key := pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}
+		key := pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}
 		body := []byte("payload-xyz")
 		store.Responses[key] = mocks.PDFStoreResponse{Body: body}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		snap, err := reg.SchedulePDFDownloads(ctx, []paper.PDFDownloadRequest{req})
+		snap, err := reg.Schedule(ctx, []pdfdownload.Request{req})
 
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
@@ -860,8 +860,8 @@ func TestRegistry_Worker(t *testing.T) {
 		if len(entries) != 1 {
 			t.Fatalf("entries len = %d, want 1", len(entries))
 		}
-		if entries[0].Status != paper.DownloadStatusSuccess {
-			t.Errorf("status = %q, want %q (worker must ignore caller ctx)", entries[0].Status, paper.DownloadStatusSuccess)
+		if entries[0].Status != pdfdownload.StatusSuccess {
+			t.Errorf("status = %q, want %q (worker must ignore caller ctx)", entries[0].Status, pdfdownload.StatusSuccess)
 		}
 		if entries[0].Bytes != len(body) {
 			t.Errorf("bytes = %d, want %d", entries[0].Bytes, len(body))
@@ -872,8 +872,8 @@ func TestRegistry_Worker(t *testing.T) {
 // drainEvents reads events from ch until it is closed or deadline expires.
 // Returns the events received in order and ok=true if the channel closed
 // before deadline; ok=false means the deadline tripped (test should fail).
-func drainEvents(ch <-chan paper.DownloadEvent, deadline time.Duration) ([]paper.DownloadEvent, bool) {
-	var out []paper.DownloadEvent
+func drainEvents(ch <-chan pdfdownload.Event, deadline time.Duration) ([]pdfdownload.Event, bool) {
+	var out []pdfdownload.Event
 	timer := time.NewTimer(deadline)
 	defer timer.Stop()
 	for {
@@ -908,22 +908,22 @@ func TestRegistry_FanOut(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		const n = 3
-		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		reqs := make([]pdfdownload.Request, 0, n)
 		for i := 0; i < n; i++ {
-			req := paper.PDFDownloadRequest{
+			req := pdfdownload.Request{
 				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0fan0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/fanout-" + string(rune('1'+i)) + ".pdf",
 			}
-			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
 			reqs = append(reqs, req)
 		}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		snap, err := reg.Schedule(context.Background(), reqs)
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
 
-		backlog, ch, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		backlog, ch, err := reg.Subscribe(context.Background(), snap.JobID)
 		if err != nil {
 			t.Fatalf("SubscribePDFDownloadJob: %v", err)
 		}
@@ -972,7 +972,7 @@ func TestRegistry_FanOut(t *testing.T) {
 
 		// Subscribing after completion returns the full persisted event log
 		// as backlog (live channel pre-closed); verify it matches the stream.
-		postBacklog, postLive, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		postBacklog, postLive, err := reg.Subscribe(context.Background(), snap.JobID)
 		if err != nil {
 			t.Fatalf("post-completion Subscribe: %v", err)
 		}
@@ -1028,22 +1028,22 @@ func TestRegistry_FanOut(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		const n = 5
-		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		reqs := make([]pdfdownload.Request, 0, n)
 		for i := 0; i < n; i++ {
-			req := paper.PDFDownloadRequest{
+			req := pdfdownload.Request{
 				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0slow0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/slow-" + string(rune('1'+i)) + ".pdf",
 			}
-			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("payload")}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("payload")}
 			reqs = append(reqs, req)
 		}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		snap, err := reg.Schedule(context.Background(), reqs)
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
 
-		backlog, slow, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		backlog, slow, err := reg.Subscribe(context.Background(), snap.JobID)
 		if err != nil {
 			t.Fatalf("SubscribePDFDownloadJob: %v", err)
 		}
@@ -1099,21 +1099,21 @@ func TestRegistry_FanOut(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		const n = 3
-		reqs := make([]paper.PDFDownloadRequest, 0, n)
+		reqs := make([]pdfdownload.Request, 0, n)
 		for i := 0; i < n; i++ {
-			req := paper.PDFDownloadRequest{
+			req := pdfdownload.Request{
 				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0fail0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/fail-" + string(rune('1'+i)) + ".pdf",
 			}
-			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Err: fmt.Errorf("upstream 503: %w", pdf.ErrFetch)}
+			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Err: fmt.Errorf("upstream 503: %w", pdf.ErrFetch)}
 			reqs = append(reqs, req)
 		}
 
-		snap, err := reg.SchedulePDFDownloads(context.Background(), reqs)
+		snap, err := reg.Schedule(context.Background(), reqs)
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
-		backlog, ch, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		backlog, ch, err := reg.Subscribe(context.Background(), snap.JobID)
 		if err != nil {
 			t.Fatalf("SubscribePDFDownloadJob: %v", err)
 		}
@@ -1165,13 +1165,13 @@ func TestRegistry_Sweep(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.retain1", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/retain1.pdf",
 		}
-		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body")}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body")}
 
-		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		schedSnap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
@@ -1179,7 +1179,7 @@ func TestRegistry_Sweep(t *testing.T) {
 
 		clock.Set(start.Add(retention - time.Second))
 
-		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		snap, err := reg.Snapshot(context.Background(), schedSnap.JobID)
 
 		if err != nil {
 			t.Fatalf("Snapshot: unexpected error %v", err)
@@ -1221,13 +1221,13 @@ func TestRegistry_Sweep(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.gated01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/gated.pdf",
 		}
-		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("g")}
+		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("g")}
 
-		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		schedSnap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
@@ -1237,7 +1237,7 @@ func TestRegistry_Sweep(t *testing.T) {
 		clock.Set(start.Add(2 * retention))
 		reg.Sweep(context.Background(), clock.Now())
 
-		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		snap, err := reg.Snapshot(context.Background(), schedSnap.JobID)
 		if err != nil {
 			t.Fatalf("Snapshot after sweep on in-progress job: %v", err)
 		}
@@ -1272,13 +1272,13 @@ func TestRegistry_Sweep(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.evict01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/evict.pdf",
 		}
-		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("e")}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("e")}
 
-		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		schedSnap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
@@ -1287,13 +1287,13 @@ func TestRegistry_Sweep(t *testing.T) {
 		advance := retention + time.Second
 		clock.Set(start.Add(advance))
 
-		_, err = reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
-		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+		_, err = reg.Snapshot(context.Background(), schedSnap.JobID)
+		if !errors.Is(err, pdfdownload.ErrJobUnknown) {
 			t.Fatalf("Snapshot after eviction: err = %v, want ErrDownloadJobUnknown", err)
 		}
 
-		backlog, live, err := reg.SubscribePDFDownloadJob(context.Background(), schedSnap.JobID)
-		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+		backlog, live, err := reg.Subscribe(context.Background(), schedSnap.JobID)
+		if !errors.Is(err, pdfdownload.ErrJobUnknown) {
 			t.Fatalf("Subscribe after eviction: err = %v, want ErrDownloadJobUnknown", err)
 		}
 		if backlog != nil {
@@ -1340,13 +1340,13 @@ func TestRegistry_Sweep(t *testing.T) {
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
-		req := paper.PDFDownloadRequest{
+		req := pdfdownload.Request{
 			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.swdir01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/swdir.pdf",
 		}
-		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("s")}
+		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: pdfdownload.PDFArtifactKey(req.PaperID), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("s")}
 
-		schedSnap, err := reg.SchedulePDFDownloads(context.Background(), []paper.PDFDownloadRequest{req})
+		schedSnap, err := reg.Schedule(context.Background(), []pdfdownload.Request{req})
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
@@ -1355,9 +1355,9 @@ func TestRegistry_Sweep(t *testing.T) {
 		clock.Set(start.Add(retention + 2*time.Second))
 		reg.Sweep(context.Background(), clock.Now())
 
-		_, err = reg.SnapshotPDFDownloadJob(context.Background(), schedSnap.JobID)
+		_, err = reg.Snapshot(context.Background(), schedSnap.JobID)
 
-		if !errors.Is(err, paper.ErrDownloadJobUnknown) {
+		if !errors.Is(err, pdfdownload.ErrJobUnknown) {
 			t.Fatalf("Snapshot after direct Sweep: err = %v, want ErrDownloadJobUnknown", err)
 		}
 	})

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	arxivapp "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
-	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	"github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 )
 
@@ -81,7 +81,7 @@ func ToFetchResponse(result arxivapp.FetchResult, fetchedAt time.Time) FetchResp
 			IsNew:           r.IsNew,
 		})
 	}
-	if result.Job.JobID != paper.DownloadJobID("") {
+	if result.Job.JobID != pdfdownload.JobID("") {
 		dto := paperctrl.ToDownloadJobSnapshotDTO(result.Job)
 		resp.Job = &dto
 	}

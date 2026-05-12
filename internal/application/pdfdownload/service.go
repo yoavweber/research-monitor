@@ -1,10 +1,13 @@
-// Package pdfdownload owns the in-memory registry that implements both
-// paper.PDFScheduler (write side) and paper.PDFDownloadReader (read side).
+// Package pdfdownload owns the PDF-download workflow end-to-end: the
+// scheduler that registers jobs, the worker that fetches each PDF, the
+// in-memory registry that buffers events for late subscribers, and the
+// reader API consumed by HTTP controllers. The paper aggregate is read
+// for paper identity only; no download-specific types live there.
 //
 // service.go: the Registry struct and the three public methods that
-// satisfy the domain ports. SchedulePDFDownloads creates a job and
-// launches the worker goroutine; SnapshotPDFDownloadJob returns a
-// point-in-time read; SubscribePDFDownloadJob atomically captures the
+// satisfy the consumer-defined scheduler and reader interfaces.
+// Schedule creates a job and launches the worker goroutine; Snapshot
+// returns a point-in-time read; Subscribe atomically captures the
 // backlog and registers a live channel for SSE. Also owns the jobs map,
 // registryMu, bgCtx, and the Sweep/lazy-eviction logic, plus the
 // NewRegistry constructor and ShutdownFunc.
@@ -20,11 +23,6 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
-)
-
-var (
-	_ paper.PDFScheduler      = (*Registry)(nil)
-	_ paper.PDFDownloadReader = (*Registry)(nil)
 )
 
 type Options struct {
@@ -45,22 +43,23 @@ type ShutdownFunc func(ctx context.Context) error
 // worker's appends; requests/id/total are set once at Schedule time and
 // never mutated afterward.
 type job struct {
-	id       paper.DownloadJobID
+	id       JobID
 	total    int
-	requests []paper.PDFDownloadRequest
+	requests []Request
 
 	mu          sync.Mutex
-	entries     []paper.DownloadEntryResult
-	events      []paper.DownloadEvent
-	subscribers []chan paper.DownloadEvent
+	entries     []EntryResult
+	events      []Event
+	subscribers []chan Event
 	startedAt   time.Time
 	completed   bool
 	completedAt time.Time
 }
 
-// Registry is the in-memory implementation of paper.PDFScheduler and
-// paper.PDFDownloadReader. One value satisfies both ports; the arxiv use
-// case sees only the scheduler side, the controller only the reader side.
+// Registry is the in-memory implementation of the scheduler and reader
+// surface. The same value is handed to arxiv (as a DownloadScheduler)
+// and to the HTTP layer (as a PDFDownloadReader) — both interfaces are
+// consumer-defined and satisfied implicitly.
 //
 // Lock order: registryMu (jobs map) → j.mu (per-job fields). The worker
 // only ever takes j.mu, so taking registryMu and then j.mu is
@@ -79,7 +78,7 @@ type Registry struct {
 	workers      sync.WaitGroup
 
 	registryMu sync.Mutex
-	jobs       map[paper.DownloadJobID]*job
+	jobs       map[JobID]*job
 }
 
 func NewRegistry(
@@ -96,7 +95,7 @@ func NewRegistry(
 		opts:     opts,
 		bgCtx:    bgCtx,
 		bgCancel: cancel,
-		jobs:     make(map[paper.DownloadJobID]*job),
+		jobs:     make(map[JobID]*job),
 	}
 	shutdown := func(ctx context.Context) error {
 		r.shutdownOnce.Do(func() {
@@ -118,27 +117,27 @@ func NewRegistry(
 	return r, shutdown
 }
 
-// SchedulePDFDownloads registers a new job atomically and returns its
-// initial snapshot. The passed ctx is intentionally not consulted —
-// a client disconnect between persistence and snapshot return must not
-// cancel the just-registered job (R3.5).
-func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PDFDownloadRequest) (paper.DownloadJobSnapshot, error) {
+// Schedule registers a new job atomically and returns its initial
+// snapshot. The passed ctx is intentionally not consulted — a client
+// disconnect between persistence and snapshot return must not cancel
+// the just-registered job (R3.5).
+func (r *Registry) Schedule(ctx context.Context, requests []Request) (JobSnapshot, error) {
 	if len(requests) == 0 {
-		return paper.DownloadJobSnapshot{}, nil
+		return JobSnapshot{}, nil
 	}
 
-	id := paper.DownloadJobID(uuid.NewString())
-	entries := make([]paper.DownloadEntryResult, 0, len(requests))
+	id := JobID(uuid.NewString())
+	entries := make([]EntryResult, 0, len(requests))
 	paperIDs := make([]string, 0, len(requests))
 	for _, req := range requests {
-		entries = append(entries, paper.DownloadEntryResult{
+		entries = append(entries, EntryResult{
 			PaperID: req.PaperID,
-			Status:  paper.DownloadStatusPending,
+			Status:  StatusPending,
 		})
 		paperIDs = append(paperIDs, formatPaperID(req.PaperID))
 	}
 
-	jobRequests := make([]paper.PDFDownloadRequest, len(requests))
+	jobRequests := make([]Request, len(requests))
 	copy(jobRequests, requests)
 
 	j := &job{
@@ -148,7 +147,7 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 		entries:  entries,
 		// Events log capped at total+1 (one Progress per entry plus
 		// the terminal Summary) — no more appends ever happen after.
-		events: make([]paper.DownloadEvent, 0, len(requests)+1),
+		events: make([]Event, 0, len(requests)+1),
 	}
 
 	r.registryMu.Lock()
@@ -172,44 +171,43 @@ func (r *Registry) SchedulePDFDownloads(ctx context.Context, requests []paper.PD
 	return snap, nil
 }
 
-// SnapshotPDFDownloadJob returns ErrDownloadJobUnknown for unknown or
-// evicted jobs, otherwise the current per-entry results and totals.
-func (r *Registry) SnapshotPDFDownloadJob(ctx context.Context, id paper.DownloadJobID) (paper.DownloadJobSnapshot, error) {
+// Snapshot returns ErrJobUnknown for unknown or evicted jobs, otherwise
+// the current per-entry results and totals.
+func (r *Registry) Snapshot(ctx context.Context, id JobID) (JobSnapshot, error) {
 	r.registryMu.Lock()
 	evicted := r.sweepLocked(r.clock.Now())
 	j, ok := r.jobs[id]
 	r.registryMu.Unlock()
 	r.logEvictions(ctx, evicted)
 	if !ok {
-		return paper.DownloadJobSnapshot{}, paper.ErrDownloadJobUnknown
+		return JobSnapshot{}, ErrJobUnknown
 	}
 
 	return snapshotForJob(j), nil
 }
 
-// SubscribePDFDownloadJob captures the current event log into backlog
-// and registers a buffered live channel atomically under j.mu. Once it
-// returns, every event produced by the worker arrives via exactly one
-// of backlog or live — never both, never neither (R4.1, R5.4). A job
-// that already completed gets a fully-populated backlog and a
-// pre-closed live channel.
-func (r *Registry) SubscribePDFDownloadJob(ctx context.Context, id paper.DownloadJobID) ([]paper.DownloadEvent, <-chan paper.DownloadEvent, error) {
+// Subscribe captures the current event log into backlog and registers a
+// buffered live channel atomically under j.mu. Once it returns, every
+// event produced by the worker arrives via exactly one of backlog or
+// live — never both, never neither (R4.1, R5.4). A job that already
+// completed gets a fully-populated backlog and a pre-closed live channel.
+func (r *Registry) Subscribe(ctx context.Context, id JobID) ([]Event, <-chan Event, error) {
 	r.registryMu.Lock()
 	evicted := r.sweepLocked(r.clock.Now())
 	j, ok := r.jobs[id]
 	r.registryMu.Unlock()
 	r.logEvictions(ctx, evicted)
 	if !ok {
-		return nil, nil, paper.ErrDownloadJobUnknown
+		return nil, nil, ErrJobUnknown
 	}
 
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
-	backlog := make([]paper.DownloadEvent, len(j.events))
+	backlog := make([]Event, len(j.events))
 	copy(backlog, j.events)
 
-	live := make(chan paper.DownloadEvent, r.opts.SubscriberBuffer)
+	live := make(chan Event, r.opts.SubscriberBuffer)
 	if j.completed {
 		// No more events will fire; close immediately. Don't append to
 		// j.subscribers — finishJob already cleared the slice.
@@ -234,7 +232,7 @@ func (r *Registry) Sweep(ctx context.Context, now time.Time) {
 // evictionLog records one eviction for deferred logging outside the
 // registry mutex.
 type evictionLog struct {
-	id  paper.DownloadJobID
+	id  JobID
 	age time.Duration
 }
 
@@ -273,7 +271,7 @@ func (r *Registry) logEvictions(ctx context.Context, evicted []evictionLog) {
 // snapshotForJob projects j into a snapshot reflecting current state.
 // Acquires j.mu while reading; safe to call while the worker is
 // appending.
-func snapshotForJob(j *job) paper.DownloadJobSnapshot {
+func snapshotForJob(j *job) JobSnapshot {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return buildSnapshotLocked(j, j.completed, j.completedAt)

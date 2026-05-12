@@ -15,6 +15,7 @@ import (
 
 	"github.com/yoavweber/research-monitor/backend/internal/application"
 	appanalyzer "github.com/yoavweber/research-monitor/backend/internal/application/analyzer"
+	apparxiv "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
 	apppdfdownload "github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	analyzerdomain "github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
@@ -33,6 +34,7 @@ import (
 	sourcerepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
 	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 	"github.com/yoavweber/research-monitor/backend/internal/http/controller"
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/http/route"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
@@ -217,14 +219,14 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 	//
 	// When WirePDFDownload is false but the arxiv route is wired, the
 	// harness injects a recording PaperPDFScheduler fake so the arxiv use
-	// case's Scheduler.SchedulePDFDownloads call does not blow up on a nil
+	// case's Scheduler.Schedule call does not blow up on a nil
 	// interface. The fake records the requests but performs no I/O —
 	// pre-existing arxiv-only tests stay hermetic.
 	var (
 		pdfDownloadRegistry *apppdfdownload.Registry
 		pdfDownloadShutdown apppdfdownload.ShutdownFunc
-		arxivScheduler      paper.PDFScheduler
-		downloadReader      paper.PDFDownloadReader
+		arxivScheduler      apparxiv.DownloadScheduler
+		downloadReader      paperctrl.PDFDownloadReader
 	)
 	if o.WirePDFDownload {
 		retention := o.PDFDownloadRetention
@@ -256,10 +258,10 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		arxivScheduler = pdfDownloadRegistry
 		downloadReader = pdfDownloadRegistry
 	} else if o.ArxivFetcher != nil {
-		// Arxiv use case unconditionally calls Scheduler.SchedulePDFDownloads
-		// after a successful persist; a nil scheduler panics. The recording
-		// fake satisfies the port without performing any I/O.
-		arxivScheduler = mocks.NewPaperPDFScheduler()
+		// Arxiv use case unconditionally calls Scheduler.Schedule after a
+		// successful persist; a nil scheduler panics. The recording fake
+		// satisfies the port without performing any I/O.
+		arxivScheduler = mocks.NewPDFDownloadScheduler()
 	}
 
 	// Deps is assembled once and reused for both routers so the same repo

@@ -65,7 +65,7 @@ func TestArxivRouter_RegistersFetchEndpoint(t *testing.T) {
 		Arxiv: ArxivConfig{
 			Fetcher:   &fakePaperFetcher{entries: []paper.Entry{}},
 			Query:     paper.Query{Categories: []string{"cs.LG"}, MaxResults: 10},
-			Scheduler: mocks.NewPaperPDFScheduler(),
+			Scheduler: mocks.NewPDFDownloadScheduler(),
 		},
 		Paper: PaperConfig{Repo: paperrepo.NewRepository(testdb.New(t))},
 	})

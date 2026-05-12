@@ -46,7 +46,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		fetcher := &mocks.PaperFetcher{Entries: entries}
 		repo := paperrepo.NewRepository(testdb.New(t))
 		log := &mocks.RecordingLogger{}
-		scheduler := mocks.NewPaperPDFScheduler()
+		scheduler := mocks.NewPDFDownloadScheduler()
 		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery(), scheduler)
 
 		got, err := uc.Fetch(context.Background())
@@ -84,7 +84,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		}
 		fetcher := &mocks.PaperFetcher{Entries: entries}
 		log := &mocks.RecordingLogger{}
-		scheduler := mocks.NewPaperPDFScheduler()
+		scheduler := mocks.NewPDFDownloadScheduler()
 		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery(), scheduler)
 
 		got, err := uc.Fetch(context.Background())
@@ -122,7 +122,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		fetcher := &mocks.PaperFetcher{Error: paper.ErrUpstreamBadStatus}
 		repo := paperrepo.NewRepository(testdb.New(t))
 		log := &mocks.RecordingLogger{}
-		scheduler := mocks.NewPaperPDFScheduler()
+		scheduler := mocks.NewPDFDownloadScheduler()
 		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery(), scheduler)
 
 		got, err := uc.Fetch(context.Background())
@@ -170,7 +170,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 			{IsNew: true}, // unreachable; if Save #3 fires the test fails on count
 		}}
 		log := &mocks.RecordingLogger{}
-		scheduler := mocks.NewPaperPDFScheduler()
+		scheduler := mocks.NewPDFDownloadScheduler()
 		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery(), scheduler)
 
 		got, err := uc.Fetch(context.Background())
@@ -213,7 +213,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		}
 		fetcher := &mocks.PaperFetcher{Entries: entries}
 		log := &mocks.RecordingLogger{}
-		scheduler := mocks.NewPaperPDFScheduler()
+		scheduler := mocks.NewPDFDownloadScheduler()
 		uc := arxivapp.NewArxivUseCase(fetcher, repo, log, newQuery(), scheduler)
 
 		got, err := uc.Fetch(context.Background())

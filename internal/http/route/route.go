@@ -4,12 +4,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	apparxiv "github.com/yoavweber/research-monitor/backend/internal/application/arxiv"
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/analyzer"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 )
 
 // ArxivConfig is the feature-scoped sub-bundle passed through route.Deps to
@@ -18,14 +20,14 @@ import (
 type ArxivConfig struct {
 	Fetcher   paper.Fetcher
 	Query     paper.Query
-	Scheduler paper.PDFScheduler
+	Scheduler apparxiv.DownloadScheduler
 }
 
-// DownloadConfig carries the shared paper.PDFDownloadReader for the
+// DownloadConfig carries the shared PDFDownloadReader for the
 // pdf-download HTTP endpoints (status + SSE stream). Bootstrap assembles
 // it once at startup from the same registry that satisfies ArxivConfig.Scheduler.
 type DownloadConfig struct {
-	Reader paper.PDFDownloadReader
+	Reader paperctrl.PDFDownloadReader
 }
 
 // PaperConfig is the feature-scoped sub-bundle for the source-neutral
