@@ -97,11 +97,14 @@ func NewRegistry(
 		bgCancel: cancel,
 		jobs:     make(map[JobID]*job),
 	}
+	var shutdownErr error
 	shutdown := func(ctx context.Context) error {
 		r.shutdownOnce.Do(func() {
 			r.bgCancel()
 			// Workers ignore ctx (R3.5), so the deadline only releases
-			// the shutdown caller; it does not interrupt downloads.
+			// the shutdown caller; it does not interrupt downloads. We
+			// surface ctx.Err() so callers can tell a forced-release
+			// apart from a clean drain.
 			done := make(chan struct{})
 			go func() {
 				r.workers.Wait()
@@ -110,9 +113,10 @@ func NewRegistry(
 			select {
 			case <-done:
 			case <-ctx.Done():
+				shutdownErr = ctx.Err()
 			}
 		})
-		return nil
+		return shutdownErr
 	}
 	return r, shutdown
 }

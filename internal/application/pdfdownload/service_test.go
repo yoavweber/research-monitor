@@ -1363,7 +1363,7 @@ func TestRegistry_Sweep(t *testing.T) {
 	})
 }
 
-func TestNewRegistry_ShutdownReturnsNil(t *testing.T) {
+func TestNewRegistry_Shutdown(t *testing.T) {
 	t.Parallel()
 
 	t.Run("calling shutdown after construction reports no error and is safe to repeat", func(t *testing.T) {
@@ -1384,4 +1384,45 @@ func TestNewRegistry_ShutdownReturnsNil(t *testing.T) {
 			t.Fatalf("shutdown 2: unexpected error: %v", err)
 		}
 	})
+
+	t.Run("returns ctx.Err when the deadline elapses before workers drain", func(t *testing.T) {
+		t.Parallel()
+		// Simulate a download that ignores the registry's bgCtx — e.g. an
+		// upstream HTTP call that swallows ctx — so workers do not exit
+		// when bgCancel fires and the shutdown caller's deadline must win.
+		hang := make(chan struct{})
+		t.Cleanup(func() { close(hang) })
+		store := &hangingStore{hang: hang}
+		logger := &mocks.RecordingLogger{}
+		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+
+		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
+			Retention:        5 * time.Minute,
+			SubscriberBuffer: 32,
+		})
+		if _, err := reg.Schedule(context.Background(), sampleRequests(1)); err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		err := shutdown(ctx)
+
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("shutdown err = %v, want context.DeadlineExceeded", err)
+		}
+	})
+}
+
+// hangingStore blocks Ensure indefinitely on hang and ignores the
+// caller's ctx. It models an upstream that does not honor cancellation,
+// which is the only condition under which the shutdown deadline can win
+// the select inside ShutdownFunc.
+type hangingStore struct {
+	hang chan struct{}
+}
+
+func (h *hangingStore) Ensure(_ context.Context, _ pdf.Key) (pdf.Locator, error) {
+	<-h.hang
+	return nil, nil
 }
