@@ -1,7 +1,7 @@
-// outcome.go: produces the per-entry outcome triple
-// (status, category, description) that EntryResult carries onto the
-// wire. classify maps pdf.Err* sentinels (and nil) to the triple;
-// sanitize strips paths/credentials and truncates to 256 chars so the
+// errfields.go: produces the error-related fields of EntryResult
+// (status, category, description) from a pdf.Store.Ensure return value.
+// classify maps pdf.Err* sentinels (and nil) to the triple; sanitize
+// strips paths/credentials and truncates to 256 chars so the
 // description never leaks filesystem details.
 package pdfdownload
 
