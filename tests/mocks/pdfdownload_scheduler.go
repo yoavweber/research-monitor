@@ -83,9 +83,9 @@ func (s *PDFDownloadScheduler) CallCount() int {
 	return len(s.Calls)
 }
 
-// LastCall returns the most recent request slice, or nil if Schedule
-// has not been called.
-func (s *PDFDownloadScheduler) LastCall() []pdfdownload.Request {
+// LastRequests returns the request slice passed to the most recent
+// Schedule call, or nil if Schedule has not been called.
+func (s *PDFDownloadScheduler) LastRequests() []pdfdownload.Request {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.Calls) == 0 {

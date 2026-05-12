@@ -65,8 +65,8 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		if scheduler.CallCount() != 1 {
 			t.Errorf("scheduler called %d times, want 1 (R1.1)", scheduler.CallCount())
 		}
-		if len(scheduler.LastCall()) != 3 {
-			t.Errorf("scheduler received %d requests, want 3 (all entries were IsNew)", len(scheduler.LastCall()))
+		if len(scheduler.LastRequests()) != 3 {
+			t.Errorf("scheduler received %d requests, want 3 (all entries were IsNew)", len(scheduler.LastRequests()))
 		}
 		assertSingleLog(t, log.RecordsAt("Info"), "paper.fetch.ok", map[string]any{
 			"source": paper.SourceArxiv, "new": 3, "skipped": 0,
@@ -105,7 +105,7 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 			}
 		}
 		// R1.1: Schedule receives only the IsNew entries, in submission order.
-		gotReqs := scheduler.LastCall()
+		gotReqs := scheduler.LastRequests()
 		if len(gotReqs) != 2 {
 			t.Fatalf("scheduler received %d requests, want 2 (only IsNew entries)", len(gotReqs))
 		}
@@ -234,8 +234,8 @@ func TestArxivUseCase_Fetch(t *testing.T) {
 		if scheduler.CallCount() != 1 {
 			t.Errorf("scheduler called %d times, want 1 (called with empty slice per R1.2)", scheduler.CallCount())
 		}
-		if len(scheduler.LastCall()) != 0 {
-			t.Errorf("scheduler received %d requests, want 0 (no IsNew entries)", len(scheduler.LastCall()))
+		if len(scheduler.LastRequests()) != 0 {
+			t.Errorf("scheduler received %d requests, want 0 (no IsNew entries)", len(scheduler.LastRequests()))
 		}
 		if got.Job.JobID != "" {
 			t.Errorf("Job snapshot = %v, want zero (no IsNew entries → no job)", got.Job)
