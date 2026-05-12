@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
+	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
 
 // TestIntegration_ArxivPDFDownload_Retention covers task 5.3:
@@ -60,7 +62,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 			entries[i].PDFURL = srv.URL + entries[i].PDFURL
 		}
 
-		fetcher := &roundRobinFetcher{Batches: [][]paper.Entry{entries}}
+		fetcher := &mocks.PaperFetcher{Batches: [][]paper.Entry{entries}}
 		retention := 100 * time.Millisecond
 		env := setup.SetupTestEnv(t, setup.TestEnvOpts{
 			ArxivFetcher: fetcher,
@@ -155,7 +157,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 			entries[i].PDFURL = srv.URL + entries[i].PDFURL
 		}
 
-		fetcher := &roundRobinFetcher{Batches: [][]paper.Entry{entries}}
+		fetcher := &mocks.PaperFetcher{Batches: [][]paper.Entry{entries}}
 		// A tiny retention window makes the assertion sharp: if the
 		// in-progress branch in sweepLocked is ever buggy and tries to
 		// evict, even a 50ms-old job would qualify under the 10-minute
@@ -186,7 +188,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 		// This is the R6.1 observable: an active job remains reachable
 		// past the retention window.
 		statusResp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/downloads/"+jobID)
-		var statusBody map[string]any
+		var statusBody paperctrl.JobStatusEnvelope
 		func() {
 			defer statusResp.Body.Close()
 			if statusResp.StatusCode != http.StatusOK {
@@ -196,15 +198,11 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 				t.Fatalf("decode status: %v", err)
 			}
 		}()
-		data, _ := statusBody["data"].(map[string]any)
-		if data == nil {
-			t.Fatalf("status missing data: %+v", statusBody)
-		}
-		if got, _ := data["completed"].(bool); got {
+		if statusBody.Data.Completed {
 			t.Errorf("in-progress status.completed = true want false")
 		}
-		if got, _ := data["total"].(float64); int(got) != len(entries) {
-			t.Errorf("status.total = %v want %d", data["total"], len(entries))
+		if statusBody.Data.Total != len(entries) {
+			t.Errorf("status.total = %d want %d", statusBody.Data.Total, len(entries))
 		}
 
 		// Release the gates so the worker can complete. After that, the
@@ -232,17 +230,15 @@ func waitForCompleted(t *testing.T, baseURL, jobID string, timeout time.Duration
 			t.Fatalf("status endpoint never reported completed=true for job %s", jobID)
 		}
 		resp := doAuthenticatedGet(t, baseURL+"/api/arxiv/downloads/"+jobID)
-		var body map[string]any
+		var body paperctrl.JobStatusEnvelope
 		func() {
 			defer resp.Body.Close()
 			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 				t.Fatalf("decode status: %v", err)
 			}
 		}()
-		if data, _ := body["data"].(map[string]any); data != nil {
-			if done, _ := data["completed"].(bool); done {
-				return
-			}
+		if body.Data.Completed {
+			return
 		}
 		time.Sleep(25 * time.Millisecond)
 	}

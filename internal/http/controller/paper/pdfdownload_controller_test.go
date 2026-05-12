@@ -1,7 +1,6 @@
 package paper_test
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +18,7 @@ import (
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
+	"github.com/yoavweber/research-monitor/backend/tests/ssetest"
 )
 
 func init() {
@@ -362,34 +362,12 @@ func TestPDFDownloadController_Status_StableShapeAcrossInProgressAndCompleted(t 
 }
 
 // sseFrame is one parsed (event, data) pair from an SSE response body.
-type sseFrame struct {
-	Event string
-	Data  string
-}
-
-// parseSSEFrames pairs lines of the form `event: <name>` with the
-// immediately following `data: <payload>` line. Lines that fall outside
-// that pattern are ignored. A frame is recorded only when a `data:` line
-// is seen after an `event:` line, which mirrors how a real SSE client
-// would parse the stream.
-func parseSSEFrames(t *testing.T, body string) []sseFrame {
+// parseSSEFrames is a thin t.Fatalf-binding adapter over ssetest.ParseAll
+// so callsites stay terse.
+func parseSSEFrames(t *testing.T, body string) []ssetest.Frame {
 	t.Helper()
-	var frames []sseFrame
-	scanner := bufio.NewScanner(strings.NewReader(body))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	var pendingEvent string
-	for scanner.Scan() {
-		line := scanner.Text()
-		switch {
-		case strings.HasPrefix(line, "event:"):
-			pendingEvent = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-		case strings.HasPrefix(line, "data:"):
-			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			frames = append(frames, sseFrame{Event: pendingEvent, Data: data})
-			pendingEvent = ""
-		}
-	}
-	if err := scanner.Err(); err != nil {
+	frames, err := ssetest.ParseAll(strings.NewReader(body))
+	if err != nil {
 		t.Fatalf("scanning SSE body: %v", err)
 	}
 	return frames
@@ -489,11 +467,11 @@ func TestPDFDownloadController_Stream_BacklogIncludingSummary_ReplaysAndCloses(t
 	if len(frames) != 3 {
 		t.Fatalf("frame count=%d, want 3; body=%q", len(frames), w.Body.String())
 	}
-	if frames[0].Event != "download.progress" || frames[1].Event != "download.progress" {
-		t.Errorf("first two frames must be download.progress; got %q, %q", frames[0].Event, frames[1].Event)
+	if frames[0].Event != paperctrl.EventDownloadProgress || frames[1].Event != paperctrl.EventDownloadProgress {
+		t.Errorf("first two frames must be %s; got %q, %q", paperctrl.EventDownloadProgress, frames[0].Event, frames[1].Event)
 	}
-	if frames[2].Event != "download.summary" {
-		t.Errorf("final frame must be download.summary; got %q", frames[2].Event)
+	if frames[2].Event != paperctrl.EventDownloadSummary {
+		t.Errorf("final frame must be %s; got %q", paperctrl.EventDownloadSummary, frames[2].Event)
 	}
 
 	var summary map[string]any
@@ -555,11 +533,11 @@ func TestPDFDownloadController_Stream_LiveEvents_ReplayedInOrderThenSummaryClose
 	if len(frames) != 3 {
 		t.Fatalf("frame count=%d, want 3; body=%q", len(frames), w.Body.String())
 	}
-	if frames[0].Event != "download.progress" || frames[1].Event != "download.progress" {
-		t.Errorf("first two frames must be download.progress; got %q, %q", frames[0].Event, frames[1].Event)
+	if frames[0].Event != paperctrl.EventDownloadProgress || frames[1].Event != paperctrl.EventDownloadProgress {
+		t.Errorf("first two frames must be %s; got %q, %q", paperctrl.EventDownloadProgress, frames[0].Event, frames[1].Event)
 	}
-	if frames[2].Event != "download.summary" {
-		t.Errorf("final frame must be download.summary; got %q", frames[2].Event)
+	if frames[2].Event != paperctrl.EventDownloadSummary {
+		t.Errorf("final frame must be %s; got %q", paperctrl.EventDownloadSummary, frames[2].Event)
 	}
 
 	// Verify a progress payload carries paper_id and status — proves
@@ -604,8 +582,8 @@ func TestPDFDownloadController_Stream_LiveChannelClosedWithoutSummary_EmitsError
 	if len(frames) != 2 {
 		t.Fatalf("frame count=%d, want 2 (progress + error); body=%q", len(frames), w.Body.String())
 	}
-	if frames[0].Event != "download.progress" {
-		t.Errorf("first frame=%q, want download.progress", frames[0].Event)
+	if frames[0].Event != paperctrl.EventDownloadProgress {
+		t.Errorf("first frame=%q, want %s", frames[0].Event, paperctrl.EventDownloadProgress)
 	}
 	if frames[1].Event != "error" {
 		t.Errorf("final frame=%q, want error", frames[1].Event)
@@ -658,7 +636,7 @@ func TestPDFDownloadController_Stream_ClientDisconnect_ReturnsWithoutPanic(t *te
 	// fine). What matters is that the handler returned without panic
 	// and never emitted a summary frame for a job that produced none.
 	for _, f := range parseSSEFrames(t, w.Body.String()) {
-		if f.Event == "download.summary" {
+		if f.Event == paperctrl.EventDownloadSummary {
 			t.Errorf("did not expect a summary frame; got data=%q", f.Data)
 		}
 	}

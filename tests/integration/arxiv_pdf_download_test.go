@@ -3,10 +3,8 @@
 package integration_test
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,9 +12,12 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	arxivctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/arxiv"
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
+	"github.com/yoavweber/research-monitor/backend/tests/ssetest"
 )
 
 // smallPDF is the minimal body served for the success paths. Real PDF
@@ -25,73 +26,18 @@ import (
 // byte count.
 var smallPDF = []byte("%PDF-1.4\n%small stub\n%%EOF\n")
 
-// sseEvent is one parsed SSE frame: the value after `event: ` and the
-// concatenated value after `data: ` lines. The terminal empty line ends a
-// frame.
-type sseEvent struct {
-	Event string
-	Data  string
-}
-
-// readSSEUntilSummary consumes the SSE body until a `download.summary`
-// frame arrives or the stream closes. Returns the ordered list of frames
-// seen. A deadline-bound context makes the test fail loudly on a hang
-// rather than blocking the test runner.
-func readSSEUntilSummary(t *testing.T, body io.Reader) []sseEvent {
-	t.Helper()
-	scanner := bufio.NewScanner(body)
-	// Bump buffer cap; SSE frames carry small JSON, but the default 64K
-	// scanner buffer is generous enough already — explicit set guards
-	// future expansion of the data payload.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-
-	var (
-		frames    []sseEvent
-		curEvent  string
-		curDataSB strings.Builder
-	)
-	flush := func() {
-		if curEvent == "" && curDataSB.Len() == 0 {
-			return
-		}
-		frames = append(frames, sseEvent{Event: curEvent, Data: curDataSB.String()})
-		curEvent = ""
-		curDataSB.Reset()
-	}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			flush()
-			if len(frames) > 0 && frames[len(frames)-1].Event == "download.summary" {
-				return frames
-			}
-			continue
-		}
-		switch {
-		case strings.HasPrefix(line, "event:"):
-			curEvent = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-		case strings.HasPrefix(line, "data:"):
-			if curDataSB.Len() > 0 {
-				curDataSB.WriteByte('\n')
-			}
-			curDataSB.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
-	}
-	flush()
-	return frames
-}
-
 // runScenario drives the full happy-path / failure-variant flow. The path
 // shape ("/pdf/<sourceid>") is fixed; pickFailingPath, if non-empty,
 // selects exactly one path whose server response is HTTP 500.
 //
-// The function returns the captured SSE frames and the final JSON status
-// snapshot so each scenario asserts whichever properties it cares about.
+// The function returns the captured SSE frames and the final status
+// snapshot decoded into the wire-shape DTO so each scenario asserts
+// whichever properties it cares about with typed field access.
 func runScenario(
 	t *testing.T,
 	entries []paper.Entry,
 	pickFailingPath string,
-) ([]sseEvent, map[string]any) {
+) ([]ssetest.Frame, paperctrl.DownloadJobSnapshotDTO) {
 	t.Helper()
 
 	// HTTP server backing the PDF fetches. Distinct paths per entry let the
@@ -127,21 +73,14 @@ func runScenario(
 		t.Fatalf("GET /api/arxiv/fetch status = %d want 200", fetchResp.StatusCode)
 	}
 
-	var fetchBody struct {
-		Data struct {
-			Job struct {
-				JobID string `json:"job_id"`
-				Total int    `json:"total"`
-			} `json:"job"`
-		} `json:"data"`
-	}
+	var fetchBody arxivctrl.FetchEnvelope
 	if err := json.NewDecoder(fetchResp.Body).Decode(&fetchBody); err != nil {
 		t.Fatalf("decode fetch body: %v", err)
 	}
-	jobID := fetchBody.Data.Job.JobID
-	if jobID == "" {
+	if fetchBody.Data.Job == nil || fetchBody.Data.Job.JobID == "" {
 		t.Fatalf("fetch response missing data.job.job_id; body: %+v", fetchBody)
 	}
+	jobID := fetchBody.Data.Job.JobID
 
 	// Open the SSE stream. Deadline-bound so a worker hang fails the test
 	// instead of stalling the runner.
@@ -162,7 +101,7 @@ func runScenario(
 		t.Fatalf("stream content-type = %q want text/event-stream", ct)
 	}
 
-	frames := readSSEUntilSummary(t, streamResp.Body)
+	frames := readUntilSummary(t, streamResp.Body)
 
 	// Status snapshot.
 	statusResp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/downloads/"+jobID)
@@ -170,11 +109,11 @@ func runScenario(
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("status endpoint = %d want 200", statusResp.StatusCode)
 	}
-	var statusBody map[string]any
+	var statusBody paperctrl.JobStatusEnvelope
 	if err := json.NewDecoder(statusResp.Body).Decode(&statusBody); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	return frames, statusBody
+	return frames, statusBody.Data
 }
 
 // TestIntegration_ArxivPDFDownload_HappyPath exercises the full flow end-
@@ -201,77 +140,73 @@ func TestIntegration_ArxivPDFDownload_HappyPath(t *testing.T) {
 		}
 		want := len(entries)
 
-		frames, statusBody := runScenario(t, entries, "")
+		frames, snapshot := runScenario(t, entries, "")
 
 		var (
 			progressCount int
-			summary       map[string]any
+			summary       paperctrl.DownloadSummaryEventDTO
+			gotSummary    bool
 		)
 		for _, f := range frames {
 			switch f.Event {
-			case "download.progress":
+			case paperctrl.EventDownloadProgress:
 				progressCount++
-				var d map[string]any
-				if err := json.Unmarshal([]byte(f.Data), &d); err != nil {
+				var p paperctrl.DownloadProgressEventDTO
+				if err := json.Unmarshal([]byte(f.Data), &p); err != nil {
 					t.Fatalf("decode progress: %v", err)
 				}
-				if got := d["status"]; got != "success" {
-					t.Errorf("progress status = %v want success", got)
+				if p.Status != "success" {
+					t.Errorf("progress status = %q want success", p.Status)
 				}
-				if got, _ := d["bytes"].(float64); int(got) != len(smallPDF) {
-					t.Errorf("progress bytes = %v want %d", d["bytes"], len(smallPDF))
+				if p.Bytes != len(smallPDF) {
+					t.Errorf("progress bytes = %d want %d", p.Bytes, len(smallPDF))
 				}
-			case "download.summary":
+			case paperctrl.EventDownloadSummary:
 				if err := json.Unmarshal([]byte(f.Data), &summary); err != nil {
 					t.Fatalf("decode summary: %v", err)
 				}
+				gotSummary = true
 			}
 		}
 		if progressCount != want {
 			t.Errorf("progress event count = %d want %d (frames: %+v)", progressCount, want, frames)
 		}
-		if summary == nil {
+		if !gotSummary {
 			t.Fatal("missing download.summary frame")
 		}
-		if got, _ := summary["total"].(float64); int(got) != want {
-			t.Errorf("summary.total = %v want %d", summary["total"], want)
+		if summary.Total != want {
+			t.Errorf("summary.total = %d want %d", summary.Total, want)
 		}
-		if got, _ := summary["succeeded"].(float64); int(got) != want {
-			t.Errorf("summary.succeeded = %v want %d", summary["succeeded"], want)
+		if summary.Succeeded != want {
+			t.Errorf("summary.succeeded = %d want %d", summary.Succeeded, want)
 		}
-		if got, _ := summary["failed"].(float64); int(got) != 0 {
-			t.Errorf("summary.failed = %v want 0", summary["failed"])
+		if summary.Failed != 0 {
+			t.Errorf("summary.failed = %d want 0", summary.Failed)
 		}
-		if frames[len(frames)-1].Event != "download.summary" {
-			t.Errorf("last frame = %q want download.summary", frames[len(frames)-1].Event)
+		if frames[len(frames)-1].Event != paperctrl.EventDownloadSummary {
+			t.Errorf("last frame = %q want %s", frames[len(frames)-1].Event, paperctrl.EventDownloadSummary)
 		}
 
 		// Status snapshot must be byte-consistent with the stream
 		// (R5.4): same totals, same per-entry statuses.
-		data, _ := statusBody["data"].(map[string]any)
-		if data == nil {
-			t.Fatalf("status body missing data: %+v", statusBody)
+		if !snapshot.Completed {
+			t.Errorf("status.completed = false want true")
 		}
-		if got, _ := data["completed"].(bool); !got {
-			t.Errorf("status.completed = %v want true", data["completed"])
+		if snapshot.Total != want {
+			t.Errorf("status.total = %d want %d", snapshot.Total, want)
 		}
-		if got, _ := data["total"].(float64); int(got) != want {
-			t.Errorf("status.total = %v want %d", data["total"], want)
+		if snapshot.Succeeded != want {
+			t.Errorf("status.succeeded = %d want %d", snapshot.Succeeded, want)
 		}
-		if got, _ := data["succeeded"].(float64); int(got) != want {
-			t.Errorf("status.succeeded = %v want %d", data["succeeded"], want)
+		if snapshot.Failed != 0 {
+			t.Errorf("status.failed = %d want 0", snapshot.Failed)
 		}
-		if got, _ := data["failed"].(float64); int(got) != 0 {
-			t.Errorf("status.failed = %v want 0", data["failed"])
+		if len(snapshot.Entries) != want {
+			t.Fatalf("status.entries len = %d want %d", len(snapshot.Entries), want)
 		}
-		statusEntries, _ := data["entries"].([]any)
-		if len(statusEntries) != want {
-			t.Fatalf("status.entries len = %d want %d", len(statusEntries), want)
-		}
-		for i, raw := range statusEntries {
-			e, _ := raw.(map[string]any)
-			if got, _ := e["status"].(string); got != "success" {
-				t.Errorf("status.entries[%d].status = %q want success", i, got)
+		for i, e := range snapshot.Entries {
+			if e.Status != "success" {
+				t.Errorf("status.entries[%d].status = %q want success", i, e.Status)
 			}
 		}
 	})
@@ -299,42 +234,42 @@ func TestIntegration_ArxivPDFDownload_FailureVariant(t *testing.T) {
 				Title: "Paper C", SubmittedAt: now, UpdatedAt: now, PDFURL: "/pdf/c"},
 		}
 
-		frames, statusBody := runScenario(t, entries, "/pdf/fail")
+		frames, snapshot := runScenario(t, entries, "/pdf/fail")
 
 		var (
 			gotFailed     int
 			gotSucceeded  int
-			summary       map[string]any
+			summary       paperctrl.DownloadSummaryEventDTO
+			gotSummary    bool
 			progressOrder []string
 		)
 		for _, f := range frames {
-			if f.Event != "download.progress" && f.Event != "download.summary" {
-				continue
-			}
-			var d map[string]any
-			if err := json.Unmarshal([]byte(f.Data), &d); err != nil {
-				t.Fatalf("decode %s: %v", f.Event, err)
-			}
-			if f.Event == "download.summary" {
-				summary = d
-				continue
-			}
-
-			status, _ := d["status"].(string)
-			progressOrder = append(progressOrder, status)
-			switch status {
-			case "failed":
-				gotFailed++
-				if cat, _ := d["category"].(string); cat != "fetch" {
-					t.Errorf("failed entry category = %q want fetch", cat)
+			switch f.Event {
+			case paperctrl.EventDownloadProgress:
+				var p paperctrl.DownloadProgressEventDTO
+				if err := json.Unmarshal([]byte(f.Data), &p); err != nil {
+					t.Fatalf("decode progress: %v", err)
 				}
-				if desc, _ := d["description"].(string); desc == "" {
-					t.Errorf("failed entry description must not be empty")
+				progressOrder = append(progressOrder, p.Status)
+				switch p.Status {
+				case "failed":
+					gotFailed++
+					if p.Category != "fetch" {
+						t.Errorf("failed entry category = %q want fetch", p.Category)
+					}
+					if p.Description == "" {
+						t.Errorf("failed entry description must not be empty")
+					}
+				case "success":
+					gotSucceeded++
+				default:
+					t.Errorf("unexpected progress status %q", p.Status)
 				}
-			case "success":
-				gotSucceeded++
-			default:
-				t.Errorf("unexpected progress status %q", status)
+			case paperctrl.EventDownloadSummary:
+				if err := json.Unmarshal([]byte(f.Data), &summary); err != nil {
+					t.Fatalf("decode summary: %v", err)
+				}
+				gotSummary = true
 			}
 		}
 		if gotFailed != 1 {
@@ -343,41 +278,35 @@ func TestIntegration_ArxivPDFDownload_FailureVariant(t *testing.T) {
 		if gotSucceeded != 2 {
 			t.Errorf("succeeded count = %d want 2 (order: %+v)", gotSucceeded, progressOrder)
 		}
-		if summary == nil {
+		if !gotSummary {
 			t.Fatal("missing summary frame")
 		}
-		if got, _ := summary["failed"].(float64); int(got) != 1 {
-			t.Errorf("summary.failed = %v want 1", summary["failed"])
+		if summary.Failed != 1 {
+			t.Errorf("summary.failed = %d want 1", summary.Failed)
 		}
-		if got, _ := summary["succeeded"].(float64); int(got) != 2 {
-			t.Errorf("summary.succeeded = %v want 2", summary["succeeded"])
+		if summary.Succeeded != 2 {
+			t.Errorf("summary.succeeded = %d want 2", summary.Succeeded)
 		}
-		if got, _ := summary["total"].(float64); int(got) != 3 {
-			t.Errorf("summary.total = %v want 3", summary["total"])
+		if summary.Total != 3 {
+			t.Errorf("summary.total = %d want 3", summary.Total)
 		}
 
 		// Status snapshot mirrors the stream exactly (R5.4).
-		data, _ := statusBody["data"].(map[string]any)
-		if data == nil {
-			t.Fatalf("status missing data: %+v", statusBody)
+		if snapshot.Failed != 1 {
+			t.Errorf("status.failed = %d want 1", snapshot.Failed)
 		}
-		if got, _ := data["failed"].(float64); int(got) != 1 {
-			t.Errorf("status.failed = %v want 1", data["failed"])
+		if snapshot.Succeeded != 2 {
+			t.Errorf("status.succeeded = %d want 2", snapshot.Succeeded)
 		}
-		if got, _ := data["succeeded"].(float64); int(got) != 2 {
-			t.Errorf("status.succeeded = %v want 2", data["succeeded"])
-		}
-		statusEntries, _ := data["entries"].([]any)
-		if len(statusEntries) != 3 {
-			t.Fatalf("status.entries len = %d want 3", len(statusEntries))
+		if len(snapshot.Entries) != 3 {
+			t.Fatalf("status.entries len = %d want 3", len(snapshot.Entries))
 		}
 		var statusFailedCount int
-		for _, raw := range statusEntries {
-			e, _ := raw.(map[string]any)
-			if got, _ := e["status"].(string); got == "failed" {
+		for _, e := range snapshot.Entries {
+			if e.Status == "failed" {
 				statusFailedCount++
-				if cat, _ := e["category"].(string); cat != "fetch" {
-					t.Errorf("status failed entry category = %q want fetch", cat)
+				if e.Category != "fetch" {
+					t.Errorf("status failed entry category = %q want fetch", e.Category)
 				}
 			}
 		}

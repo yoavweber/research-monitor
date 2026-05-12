@@ -15,45 +15,18 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
+	arxivctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/arxiv"
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
+	"github.com/yoavweber/research-monitor/backend/tests/mocks"
+	"github.com/yoavweber/research-monitor/backend/tests/ssetest"
 )
 
-// roundRobinFetcher is a minimal paper.Fetcher test double that returns a
-// different batch of entries per call by indexing Batches with a monotonic
-// counter. Required because the production arxiv use case only schedules
-// IsNew entries — a static fetcher would yield zero IsNew rows on every
-// call after the first, defeating the two-concurrent-job scenario.
-type roundRobinFetcher struct {
-	mu      sync.Mutex
-	Batches [][]paper.Entry
-	calls   int
-}
-
-// Fetch satisfies paper.Fetcher. Returns the Nth batch (modulo len) on the
-// Nth call. Guarded by a mutex so concurrent fetch handlers do not race on
-// the call counter.
-func (f *roundRobinFetcher) Fetch(_ context.Context, _ paper.Query) ([]paper.Entry, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.Batches) == 0 {
-		return nil, nil
-	}
-	batch := f.Batches[f.calls%len(f.Batches)]
-	f.calls++
-	// Return a shallow copy so the production code path that mutates
-	// PDFURL via the harness's URL rewrite (if any) doesn't leak across
-	// calls.
-	out := make([]paper.Entry, len(batch))
-	copy(out, batch)
-	return out, nil
-}
-
 // fireFetch issues a single authenticated GET /api/arxiv/fetch against
-// baseURL and returns the parsed job_id and the source_id list the caller
-// uses to identify which batch each job covers. source_ids are read from
-// the embedded job snapshot's `entries[].paper_id.source_id`, which the
-// arxiv use case populates from the IsNew subset (R2.2).
+// baseURL and returns the parsed job_id together with the per-entry
+// source_id list. source_ids come from the embedded job snapshot, which
+// the arxiv use case populates from the IsNew subset (R2.2).
 func fireFetch(t *testing.T, baseURL string) (jobID string, sourceIDs []string) {
 	t.Helper()
 	resp := doAuthenticatedGet(t, baseURL+"/api/arxiv/fetch")
@@ -61,43 +34,17 @@ func fireFetch(t *testing.T, baseURL string) (jobID string, sourceIDs []string) 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/arxiv/fetch status = %d want 200", resp.StatusCode)
 	}
-	var body struct {
-		Data struct {
-			Job struct {
-				JobID   string `json:"job_id"`
-				Entries []struct {
-					PaperID struct {
-						SourceID string `json:"source_id"`
-					} `json:"paper_id"`
-				} `json:"entries"`
-			} `json:"job"`
-		} `json:"data"`
-	}
+	var body arxivctrl.FetchEnvelope
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode fetch body: %v", err)
 	}
-	if body.Data.Job.JobID == "" {
+	if body.Data.Job == nil || body.Data.Job.JobID == "" {
 		t.Fatalf("fetch missing job.job_id: %+v", body)
 	}
 	for _, e := range body.Data.Job.Entries {
 		sourceIDs = append(sourceIDs, e.PaperID.SourceID)
 	}
 	return body.Data.Job.JobID, sourceIDs
-}
-
-// progressSourceID extracts the source_id from a download.progress event
-// payload. The wire shape is `{ "paper_id": { "source_id": "..." }, ... }`.
-func progressSourceID(t *testing.T, data string) string {
-	t.Helper()
-	var d struct {
-		PaperID struct {
-			SourceID string `json:"source_id"`
-		} `json:"paper_id"`
-	}
-	if err := json.Unmarshal([]byte(data), &d); err != nil {
-		t.Fatalf("decode progress payload: %v", err)
-	}
-	return d.PaperID.SourceID
 }
 
 // TestIntegration_ArxivPDFDownload_Concurrency covers task 5.2: concurrent
@@ -113,11 +60,11 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		t.Parallel()
 
 		now := time.Date(2024, 4, 1, 10, 0, 0, 0, time.UTC)
-		// Two disjoint batches. The round-robin fetcher returns batchA on
-		// call 1 and batchB on call 2 (the harness shares one fetcher
-		// across both concurrent /api/arxiv/fetch invocations). All entries
-		// have distinct SourceIDs across batches so IsNew is true for every
-		// row in every fetch — required for the scheduler to enqueue work.
+		// Two disjoint batches. The shared mocks.PaperFetcher returns
+		// batchA on call 1 and batchB on call 2 via its Batches field.
+		// All entries have distinct SourceIDs across batches so IsNew is
+		// true for every row in every fetch — required for the scheduler
+		// to enqueue work.
 		batchA := []paper.Entry{
 			{Source: paper.SourceArxiv, SourceID: "2404.0A001", Version: "v1",
 				Title: "A1", SubmittedAt: now, UpdatedAt: now, PDFURL: "/pdf/a1"},
@@ -153,7 +100,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 			batchB[i].PDFURL = srv.URL + batchB[i].PDFURL
 		}
 
-		fetcher := &roundRobinFetcher{Batches: [][]paper.Entry{batchA, batchB}}
+		fetcher := &mocks.PaperFetcher{Batches: [][]paper.Entry{batchA, batchB}}
 		env := setup.SetupTestEnv(t, setup.TestEnvOpts{
 			ArxivFetcher:    fetcher,
 			ArxivQuery:      paper.Query{Categories: []string{"cs.LG"}, MaxResults: 100},
@@ -206,7 +153,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		defer cancel()
 
 		type streamOut struct {
-			frames []sseEvent
+			frames []ssetest.Frame
 			err    error
 		}
 		streams := make([]streamOut, 2)
@@ -228,7 +175,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 					streams[idx] = streamOut{err: fmt.Errorf("stream status %d", resp.StatusCode)}
 					return
 				}
-				streams[idx] = streamOut{frames: readSSEUntilSummary(t, resp.Body)}
+				streams[idx] = streamOut{frames: readUntilSummary(t, resp.Body)}
 			}(i, job)
 		}
 		sw.Wait()
@@ -243,40 +190,48 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 				expected[sid] = struct{}{}
 			}
 			seenProgress := map[string]int{}
-			var summary map[string]any
+			var (
+				summary    paperctrl.DownloadSummaryEventDTO
+				gotSummary bool
+			)
 			for _, f := range s.frames {
 				switch f.Event {
-				case "download.progress":
-					sid := progressSourceID(t, f.Data)
+				case paperctrl.EventDownloadProgress:
+					var p paperctrl.DownloadProgressEventDTO
+					if err := json.Unmarshal([]byte(f.Data), &p); err != nil {
+						t.Fatalf("decode progress: %v", err)
+					}
+					sid := p.PaperID.SourceID
 					if _, ok := expected[sid]; !ok {
 						t.Errorf("job %s stream received cross-talk: source_id %q not in own batch %v",
 							job.jobID, sid, job.sourceIDs)
 					}
 					seenProgress[sid]++
-				case "download.summary":
+				case paperctrl.EventDownloadSummary:
 					if err := json.Unmarshal([]byte(f.Data), &summary); err != nil {
 						t.Fatalf("decode summary: %v", err)
 					}
+					gotSummary = true
 				}
 			}
-			if summary == nil {
+			if !gotSummary {
 				t.Fatalf("job %s stream did not reach download.summary; frames=%+v",
 					job.jobID, s.frames)
 			}
-			if got, _ := summary["job_id"].(string); got != job.jobID {
-				t.Errorf("job %s summary.job_id = %q want %q", job.jobID, got, job.jobID)
+			if summary.JobID != job.jobID {
+				t.Errorf("job %s summary.job_id = %q want %q", job.jobID, summary.JobID, job.jobID)
 			}
-			if got, _ := summary["total"].(float64); int(got) != len(job.sourceIDs) {
-				t.Errorf("job %s summary.total = %v want %d",
-					job.jobID, summary["total"], len(job.sourceIDs))
+			if summary.Total != len(job.sourceIDs) {
+				t.Errorf("job %s summary.total = %d want %d",
+					job.jobID, summary.Total, len(job.sourceIDs))
 			}
 			if len(seenProgress) != len(expected) {
 				t.Errorf("job %s saw %d distinct progress source_ids want %d (seen=%v)",
 					job.jobID, len(seenProgress), len(expected), seenProgress)
 			}
-			if s.frames[len(s.frames)-1].Event != "download.summary" {
-				t.Errorf("job %s last frame = %q want download.summary",
-					job.jobID, s.frames[len(s.frames)-1].Event)
+			if s.frames[len(s.frames)-1].Event != paperctrl.EventDownloadSummary {
+				t.Errorf("job %s last frame = %q want %s",
+					job.jobID, s.frames[len(s.frames)-1].Event, paperctrl.EventDownloadSummary)
 			}
 		}
 	})
@@ -321,7 +276,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 			entries[i].PDFURL = srv.URL + entries[i].PDFURL
 		}
 
-		fetcher := &roundRobinFetcher{Batches: [][]paper.Entry{entries}}
+		fetcher := &mocks.PaperFetcher{Batches: [][]paper.Entry{entries}}
 		env := setup.SetupTestEnv(t, setup.TestEnvOpts{
 			ArxivFetcher: fetcher,
 			ArxivQuery:   paper.Query{Categories: []string{"cs.LG"}, MaxResults: 100},
@@ -399,10 +354,10 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		// Poll the status endpoint until the worker completes. The
 		// worker MUST make progress despite the wedged subscriber.
 		deadline := time.Now().Add(5 * time.Second)
-		var finalStatus map[string]any
+		var finalStatus paperctrl.JobStatusEnvelope
 		for {
 			if time.Now().After(deadline) {
-				t.Fatalf("status endpoint never reported completed=true: last=%+v", finalStatus)
+				t.Fatalf("status endpoint never reported completed=true: last=%+v", finalStatus.Data)
 			}
 			resp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/downloads/"+jobID)
 			func() {
@@ -411,11 +366,8 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 					t.Fatalf("decode status: %v", err)
 				}
 			}()
-			data, _ := finalStatus["data"].(map[string]any)
-			if data != nil {
-				if done, _ := data["completed"].(bool); done {
-					break
-				}
+			if finalStatus.Data.Completed {
+				break
 			}
 			// Short bounded poll; the worker drives PDFs against an
 			// in-process httptest.Server so latency is sub-millisecond.
@@ -424,42 +376,30 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 
 		// Status snapshot must report correct totals and per-entry
 		// results despite the dropped subscriber (R5.4 / R4.4).
-		data, _ := finalStatus["data"].(map[string]any)
-		if data == nil {
-			t.Fatalf("status body missing data: %+v", finalStatus)
+		data := finalStatus.Data
+		if !data.Completed {
+			t.Errorf("status.completed = false want true")
 		}
-		if got, _ := data["completed"].(bool); !got {
-			t.Errorf("status.completed = %v want true", data["completed"])
+		if data.Total != want {
+			t.Errorf("status.total = %d want %d", data.Total, want)
 		}
-		if got, _ := data["total"].(float64); int(got) != want {
-			t.Errorf("status.total = %v want %d", data["total"], want)
+		if data.Succeeded != want {
+			t.Errorf("status.succeeded = %d want %d", data.Succeeded, want)
 		}
-		if got, _ := data["succeeded"].(float64); int(got) != want {
-			t.Errorf("status.succeeded = %v want %d", data["succeeded"], want)
+		if data.Failed != 0 {
+			t.Errorf("status.failed = %d want 0", data.Failed)
 		}
-		if got, _ := data["failed"].(float64); int(got) != 0 {
-			t.Errorf("status.failed = %v want 0", data["failed"])
-		}
-		statusEntries, _ := data["entries"].([]any)
-		if len(statusEntries) != want {
-			t.Fatalf("status.entries len = %d want %d", len(statusEntries), want)
+		if len(data.Entries) != want {
+			t.Fatalf("status.entries len = %d want %d", len(data.Entries), want)
 		}
 		seenIDs := map[string]string{}
-		for i, raw := range statusEntries {
-			e, _ := raw.(map[string]any)
-			pid, _ := e["paper_id"].(map[string]any)
-			if pid == nil {
-				t.Errorf("status.entries[%d] missing paper_id: %+v", i, e)
-				continue
+		for i, e := range data.Entries {
+			seenIDs[e.PaperID.SourceID] = e.Status
+			if e.Status != "success" {
+				t.Errorf("status.entries[%d].status = %q want success", i, e.Status)
 			}
-			sid, _ := pid["source_id"].(string)
-			st, _ := e["status"].(string)
-			seenIDs[sid] = st
-			if st != "success" {
-				t.Errorf("status.entries[%d].status = %q want success", i, st)
-			}
-			if got, _ := e["bytes"].(float64); int(got) != len(smallPDF) {
-				t.Errorf("status.entries[%d].bytes = %v want %d", i, e["bytes"], len(smallPDF))
+			if e.Bytes != len(smallPDF) {
+				t.Errorf("status.entries[%d].bytes = %d want %d", i, e.Bytes, len(smallPDF))
 			}
 		}
 		for _, want := range scheduledIDs {
@@ -508,16 +448,16 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		if ct := replayResp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
 			t.Fatalf("replay stream content-type = %q", ct)
 		}
-		replayFrames := readSSEUntilSummary(t, replayResp.Body)
+		replayFrames := readUntilSummary(t, replayResp.Body)
 		var (
 			replayProgress int
 			replaySummary  bool
 		)
 		for _, f := range replayFrames {
 			switch f.Event {
-			case "download.progress":
+			case paperctrl.EventDownloadProgress:
 				replayProgress++
-			case "download.summary":
+			case paperctrl.EventDownloadSummary:
 				replaySummary = true
 			}
 		}
