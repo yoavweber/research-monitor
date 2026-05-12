@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/pdf"
 )
@@ -130,6 +131,23 @@ func TestSanitize(t *testing.T) {
 
 		got := sanitize(errors.New(long))
 
+		if len(got) > sanitizedMaxLen {
+			t.Errorf("sanitized length = %d, want <= %d", len(got), sanitizedMaxLen)
+		}
+	})
+
+	t.Run("preserves valid UTF-8 when truncating across a multi-byte rune", func(t *testing.T) {
+		t.Parallel()
+		// Pad with single-byte chars so the byte cap lands inside a
+		// 3-byte rune (the heart "❤" is U+2764, 0xE2 0x9D 0xA4 in UTF-8).
+		head := strings.Repeat("a", sanitizedMaxLen-1)
+		input := head + "❤" + "tail"
+
+		got := sanitize(errors.New(input))
+
+		if !utf8.ValidString(got) {
+			t.Errorf("sanitize emitted invalid UTF-8: %q", got)
+		}
 		if len(got) > sanitizedMaxLen {
 			t.Errorf("sanitized length = %d, want <= %d", len(got), sanitizedMaxLen)
 		}

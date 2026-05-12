@@ -76,7 +76,14 @@ func sanitize(err error) string {
 	out = bearerRegexp.ReplaceAllString(out, "Bearer [REDACTED]")
 	out = absolutePathRegexp.ReplaceAllString(out, "[PATH]")
 	if len(out) > sanitizedMaxLen {
-		out = out[:sanitizedMaxLen]
+		// Walk back from the byte cap to the start of the rune that
+		// would be split, so the result is valid UTF-8. UTF-8
+		// continuation bytes match (b & 0xC0) == 0x80.
+		cut := sanitizedMaxLen
+		for cut > 0 && (out[cut]&0xC0) == 0x80 {
+			cut--
+		}
+		out = out[:cut]
 	}
 	return out
 }
