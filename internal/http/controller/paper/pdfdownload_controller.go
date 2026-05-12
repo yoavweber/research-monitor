@@ -121,7 +121,7 @@ func writeDownloadEvent(c *gin.Context, ev pdfdownload.Event) (terminal bool) {
 	switch {
 	case ev.Summary != nil:
 		s := ev.Summary
-		c.SSEvent("download.summary", DownloadSummaryEventDTO{
+		c.SSEvent(EventDownloadSummary, DownloadSummaryEventDTO{
 			JobID:     string(s.JobID),
 			Total:     s.Total,
 			Succeeded: s.Succeeded,
@@ -130,7 +130,7 @@ func writeDownloadEvent(c *gin.Context, ev pdfdownload.Event) (terminal bool) {
 		c.Writer.Flush()
 		return true
 	case ev.Progress != nil:
-		c.SSEvent("download.progress", DownloadProgressEventDTO(ToDownloadEntryResultDTO(*ev.Progress)))
+		c.SSEvent(EventDownloadProgress, DownloadProgressEventDTO(ToDownloadEntryResultDTO(*ev.Progress)))
 		c.Writer.Flush()
 		return false
 	default:

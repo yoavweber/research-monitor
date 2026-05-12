@@ -7,6 +7,14 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 )
 
+// SSE event names emitted on the PDF-download stream. Exported so tests
+// (and any future external consumer) can pattern-match against the same
+// string the controller writes.
+const (
+	EventDownloadProgress = "download.progress"
+	EventDownloadSummary  = "download.summary"
+)
+
 // PaperIDDTO is the wire shape for paper.ID.
 type PaperIDDTO struct {
 	Source   string `json:"source"`
