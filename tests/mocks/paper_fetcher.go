@@ -19,10 +19,16 @@ import (
 type PaperFetcher struct {
 	mu sync.Mutex
 
-	// Entries is the slice returned to callers when Error is nil.
+	// Entries is the slice returned to callers when Error is nil and
+	// Batches is unset.
 	Entries []paper.Entry
-	// Error, if non-nil, is returned in place of Entries. Intended for the
-	// paper.ErrUpstream* sentinels.
+	// Batches, if non-empty, makes Fetch return Batches[invocations % len]
+	// on each call. Required by concurrency tests that need every call to
+	// yield a fresh batch of IsNew entries; an empty Batches falls back to
+	// Entries.
+	Batches [][]paper.Entry
+	// Error, if non-nil, is returned in place of Entries/Batches. Intended
+	// for the paper.ErrUpstream* sentinels.
 	Error error
 
 	// Queries captures every paper.Query passed to Fetch, in call order.
@@ -32,14 +38,26 @@ type PaperFetcher struct {
 }
 
 // Fetch satisfies paper.Fetcher. It records the call, then returns either
-// the configured Error or a shallow copy of the configured Entries slice.
+// the configured Error, the Nth element of Batches (when set), or the
+// configured Entries slice.
 func (f *PaperFetcher) Fetch(_ context.Context, q paper.Query) ([]paper.Entry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.Invocations++
 	f.Queries = append(f.Queries, q)
 	if f.Error != nil {
+		f.Invocations++
 		return nil, f.Error
 	}
+	if len(f.Batches) > 0 {
+		batch := f.Batches[f.Invocations%len(f.Batches)]
+		f.Invocations++
+		// Return a shallow copy so callsites that mutate per-entry fields
+		// (e.g. rewriting PDFURL to point at a test server) don't leak
+		// across calls.
+		out := make([]paper.Entry, len(batch))
+		copy(out, batch)
+		return out, nil
+	}
+	f.Invocations++
 	return f.Entries, nil
 }

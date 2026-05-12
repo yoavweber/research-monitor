@@ -514,3 +514,103 @@ func TestLoadEnv_LLMProvider(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadEnv_PDFDownloadRetention(t *testing.T) {
+	t.Run("unset variable resolves to 5m default", func(t *testing.T) {
+		setRequiredEnv(t)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFDownloadRetention != 5*time.Minute {
+			t.Errorf("PDFDownloadRetention = %s, want 5m", env.PDFDownloadRetention)
+		}
+	})
+
+	t.Run("override is honored", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("PDF_DOWNLOAD_RETENTION", "30s")
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFDownloadRetention != 30*time.Second {
+			t.Errorf("PDFDownloadRetention = %s, want 30s", env.PDFDownloadRetention)
+		}
+	})
+
+	t.Run("malformed duration is rejected with the offending env var name", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("PDF_DOWNLOAD_RETENTION", "not-a-duration")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for malformed duration")
+		}
+		if !strings.Contains(err.Error(), "PDF_DOWNLOAD_RETENTION") {
+			t.Errorf("error %q does not mention PDF_DOWNLOAD_RETENTION", err.Error())
+		}
+	})
+
+	t.Run("non-positive duration is rejected", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("PDF_DOWNLOAD_RETENTION", "0s")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for zero duration")
+		}
+		if !strings.Contains(err.Error(), "PDF_DOWNLOAD_RETENTION") {
+			t.Errorf("error %q does not mention PDF_DOWNLOAD_RETENTION", err.Error())
+		}
+	})
+}
+
+func TestLoadEnv_PDFDownloadSubscriberBuffer(t *testing.T) {
+	t.Run("unset variable resolves to 32 default", func(t *testing.T) {
+		setRequiredEnv(t)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFDownloadSubscriberBuf != 32 {
+			t.Errorf("PDFDownloadSubscriberBuf = %d, want 32", env.PDFDownloadSubscriberBuf)
+		}
+	})
+
+	t.Run("override is honored", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("PDF_DOWNLOAD_SUBSCRIBER_BUFFER", "8")
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.PDFDownloadSubscriberBuf != 8 {
+			t.Errorf("PDFDownloadSubscriberBuf = %d, want 8", env.PDFDownloadSubscriberBuf)
+		}
+	})
+
+	t.Run("non-positive value is rejected", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("PDF_DOWNLOAD_SUBSCRIBER_BUFFER", "0")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for zero buffer")
+		}
+		if !strings.Contains(err.Error(), "PDF_DOWNLOAD_SUBSCRIBER_BUFFER") {
+			t.Errorf("error %q does not mention PDF_DOWNLOAD_SUBSCRIBER_BUFFER", err.Error())
+		}
+	})
+}

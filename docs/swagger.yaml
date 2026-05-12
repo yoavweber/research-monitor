@@ -62,6 +62,49 @@ definitions:
       error:
         $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.Error'
     type: object
+  github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadEntryResultDTO:
+    properties:
+      bytes:
+        type: integer
+      category:
+        type: string
+      completed_at:
+        type: string
+      description:
+        type: string
+      paper_id:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.PaperIDDTO'
+      status:
+        type: string
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadJobSnapshotDTO:
+    properties:
+      completed:
+        type: boolean
+      completed_at:
+        type: string
+      entries:
+        items:
+          $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadEntryResultDTO'
+        type: array
+      failed:
+        type: integer
+      job_id:
+        type: string
+      succeeded:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.PaperIDDTO:
+    properties:
+      source:
+        type: string
+      source_id:
+        type: string
+      version:
+        type: string
+    type: object
   internal_http_controller.SourceEnvelope:
     properties:
       data:
@@ -155,6 +198,8 @@ definitions:
         type: array
       fetched_at:
         type: string
+      job:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadJobSnapshotDTO'
     type: object
   internal_http_controller_extraction.ExtractionStatusEnvelope:
     properties:
@@ -206,10 +251,58 @@ definitions:
     - source_id
     - source_type
     type: object
+  internal_http_controller_paper.DownloadEntryResultDTO:
+    properties:
+      bytes:
+        type: integer
+      category:
+        type: string
+      completed_at:
+        type: string
+      description:
+        type: string
+      paper_id:
+        $ref: '#/definitions/internal_http_controller_paper.PaperIDDTO'
+      status:
+        type: string
+    type: object
+  internal_http_controller_paper.DownloadJobSnapshotDTO:
+    properties:
+      completed:
+        type: boolean
+      completed_at:
+        type: string
+      entries:
+        items:
+          $ref: '#/definitions/internal_http_controller_paper.DownloadEntryResultDTO'
+        type: array
+      failed:
+        type: integer
+      job_id:
+        type: string
+      succeeded:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_http_controller_paper.JobStatusEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/internal_http_controller_paper.DownloadJobSnapshotDTO'
+    type: object
   internal_http_controller_paper.PaperEnvelope:
     properties:
       data:
         $ref: '#/definitions/internal_http_controller_paper.PaperResponse'
+    type: object
+  internal_http_controller_paper.PaperIDDTO:
+    properties:
+      source:
+        type: string
+      source_id:
+        type: string
+      version:
+        type: string
     type: object
   internal_http_controller_paper.PaperListEnvelope:
     properties:
@@ -341,6 +434,70 @@ paths:
       summary: Get an analysis by extraction id
       tags:
       - Analyses
+  /arxiv/downloads/{job_id}:
+    get:
+      description: |-
+        Returns a snapshot of a PDF-download job scheduled by
+        /api/arxiv/fetch, including per-entry results and totals.
+      parameters:
+      - description: Download job id (UUIDv4)
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Job status snapshot
+          schema:
+            $ref: '#/definitions/internal_http_controller_paper.JobStatusEnvelope'
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Job unknown or expired
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Get the status of a PDF-download job
+      tags:
+      - PDFDownload
+  /arxiv/downloads/{job_id}/stream:
+    get:
+      description: |-
+        Opens a Server-Sent Events stream for a PDF-download
+        job: replays buffered events first, then forwards live
+        progress events and a terminal summary frame.
+      parameters:
+      - description: Download job id (UUIDv4)
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of download.progress events followed by a terminal
+            download.summary
+          schema:
+            type: string
+        "401":
+          description: Missing or invalid API token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "404":
+          description: Job unknown or expired
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - APIToken: []
+      summary: Stream PDF-download events
+      tags:
+      - PDFDownload
   /arxiv/fetch:
     get:
       description: |-

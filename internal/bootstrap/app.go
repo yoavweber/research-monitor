@@ -12,6 +12,7 @@ import (
 
 	appanalyzer "github.com/yoavweber/research-monitor/backend/internal/application/analyzer"
 	appextraction "github.com/yoavweber/research-monitor/backend/internal/application/extraction"
+	apppdfdownload "github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	arxivinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
@@ -39,6 +40,11 @@ type App struct {
 	// DB handle closes; never accessed by HTTP handlers (those go through
 	// route.Deps.Extraction.UseCase).
 	extractionWorker *appextraction.Worker
+
+	// pdfDownloadShutdown cancels the pdfdownload registry's background
+	// context and waits for in-flight download workers, bounded by the
+	// shutdown ctx. Called from App.Shutdown before the DB handle closes.
+	pdfDownloadShutdown apppdfdownload.ShutdownFunc
 }
 
 func NewApp(ctx context.Context, env *Env) (*App, error) {
@@ -85,6 +91,21 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pdf store: %w", err)
 	}
+
+	// One in-memory registry satisfies both the arxiv use case's
+	// PDFScheduler (write side) and the download controllers'
+	// PDFDownloadReader (read side). Workers run on bgCtx; the
+	// ShutdownFunc cancels bgCtx and waits for in-flight downloads
+	// bounded by the shutdown ctx.
+	pdfDownloadRegistry, pdfDownloadShutdown := apppdfdownload.NewRegistry(
+		pdfStore,
+		logger,
+		shared.SystemClock{},
+		apppdfdownload.Options{
+			Retention:        env.PDFDownloadRetention,
+			SubscriberBuffer: env.PDFDownloadSubscriberBuf,
+		},
+	)
 	// Query is assembled once at startup so every request against this
 	// process sees the same validated category list and max_results.
 	query := paper.Query{
@@ -177,11 +198,13 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		Logger: logger,
 		Clock:  shared.SystemClock{},
 		Arxiv: route.ArxivConfig{
-			Fetcher: arxivFetcher,
-			Query:   query,
+			Fetcher:   arxivFetcher,
+			Query:     query,
+			Scheduler: pdfDownloadRegistry,
 		},
-		Paper: route.PaperConfig{Repo: paperRepo},
-		PDF:   route.PDFConfig{Store: pdfStore},
+		Paper:    route.PaperConfig{Repo: paperRepo},
+		PDF:      route.PDFConfig{Store: pdfStore},
+		Download: route.DownloadConfig{Reader: pdfDownloadRegistry},
 		Extraction: route.ExtractionConfig{
 			Repo:    extractionRepo,
 			UseCase: extractionUseCase,
@@ -191,11 +214,12 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	})
 
 	return &App{
-		Env:              env,
-		DB:               db,
-		Engine:           engine,
-		Logger:           logger,
-		extractionWorker: extractionWorker,
+		Env:                  env,
+		DB:                   db,
+		Engine:               engine,
+		Logger:               logger,
+		extractionWorker:     extractionWorker,
+		pdfDownloadShutdown:  pdfDownloadShutdown,
 	}, nil
 }
 
@@ -213,6 +237,11 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 func (a *App) Shutdown(ctx context.Context) error {
 	if a.extractionWorker != nil {
 		a.extractionWorker.Stop()
+	}
+	if a.pdfDownloadShutdown != nil {
+		if err := a.pdfDownloadShutdown(ctx); err != nil {
+			a.Logger.WarnContext(ctx, "pdfdownload.shutdown.failed", "err", err)
+		}
 	}
 	if a.DB != nil {
 		sqlDB, err := a.DB.DB()
