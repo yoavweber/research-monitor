@@ -1,7 +1,8 @@
-// classifier.go: pure function classify(err) mapping pdf.Err* sentinels
-// (and nil) to (status, category, description) for the per-entry
-// result. Plus sanitize, which strips paths/credentials and truncates
-// to 256 chars so the description never leaks filesystem details.
+// outcome.go: produces the per-entry outcome triple
+// (status, category, description) that EntryResult carries onto the
+// wire. classify maps pdf.Err* sentinels (and nil) to the triple;
+// sanitize strips paths/credentials and truncates to 256 chars so the
+// description never leaks filesystem details.
 package pdfdownload
 
 import (
