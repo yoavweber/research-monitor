@@ -1,7 +1,6 @@
 package paper
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
@@ -20,11 +19,4 @@ var (
 	ErrNotFound             = shared.NewHTTPError(http.StatusNotFound, "paper not found", nil)
 	ErrCatalogueUnavailable = shared.NewHTTPError(http.StatusInternalServerError, "paper catalogue unavailable", nil)
 	ErrDownloadJobUnknown   = shared.NewHTTPError(http.StatusNotFound, "download job unknown", nil)
-)
-
-// Validation sentinels for value-object construction. Plain errors —
-// surfaced before any HTTP layer so they never need an *HTTPError shape.
-var (
-	ErrInvalidID                 = errors.New("paper: invalid id")
-	ErrInvalidPDFDownloadRequest = errors.New("paper: invalid pdf download request")
 )

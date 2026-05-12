@@ -1,3 +1,10 @@
+// worker.go: what runs in the goroutine SchedulePDFDownloads launches.
+// runJob iterates the requests, calls runEntry (which invokes
+// pdf.Store.Ensure — the actual download), then appendAndFanOut to
+// commit the result and emit a Progress event to subscribers, and
+// finally finishJob to emit the terminal Summary and close subscriber
+// channels. Also contains fanOutLocked (non-blocking send /
+// drop-slow-subscribers) and buildSnapshotLocked.
 package pdfdownload
 
 import (

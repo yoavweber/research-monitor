@@ -75,7 +75,7 @@ func sampleRequests(n int) []paper.PDFDownloadRequest {
 	out := make([]paper.PDFDownloadRequest, 0, n)
 	for i := 0; i < n; i++ {
 		out = append(out, paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.0000"+string(rune('1'+i)), "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0000"+string(rune('1'+i)), Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.0000" + string(rune('1'+i)) + "v1.pdf",
 		})
 	}
@@ -286,7 +286,7 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 		reqs := make([]paper.PDFDownloadRequest, 0, n)
 		for i := 0; i < n; i++ {
 			req := paper.PDFDownloadRequest{
-				PaperID: paper.NewID("arxiv", "2404.0snap0"+string(rune('1'+i)), "v1"),
+				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0snap0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/snap-" + string(rune('1'+i)) + ".pdf",
 			}
 			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
@@ -373,7 +373,7 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.copy01", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.copy01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/copy.pdf",
 		}
 		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("xx")}
@@ -423,7 +423,7 @@ func TestRegistry_SnapshotPDFDownloadJob(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.prog01", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.prog01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/prog.pdf",
 		}
 		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("p")}
@@ -471,7 +471,7 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 		reqs := make([]paper.PDFDownloadRequest, 0, n)
 		for i := 0; i < n; i++ {
 			req := paper.PDFDownloadRequest{
-				PaperID: paper.NewID("arxiv", "2404.0sub0"+string(rune('1'+i)), "v1"),
+				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0sub0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/sub-" + string(rune('1'+i)) + ".pdf",
 			}
 			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("b")}
@@ -527,7 +527,7 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.post01", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.post01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/post.pdf",
 		}
 		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("done")}
@@ -583,7 +583,7 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 		reqs := make([]paper.PDFDownloadRequest, 0, n)
 		for i := 0; i < n; i++ {
 			req := paper.PDFDownloadRequest{
-				PaperID: paper.NewID("arxiv", fmt.Sprintf("2404.0cnt%02d", i), "v1"),
+				PaperID: paper.ID{Source: "arxiv", SourceID: fmt.Sprintf("2404.0cnt%02d", i), Version: "v1"},
 				PDFURL:  fmt.Sprintf("https://arxiv.org/pdf/cnt-%02d.pdf", i),
 			}
 			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("c")}
@@ -662,19 +662,31 @@ func TestRegistry_SubscribePDFDownloadJob(t *testing.T) {
 	})
 }
 
-// waitForJobCompletion polls the registry-internal completion flag for jobID
-// up to deadline. It surfaces a hard failure if the worker does not finish in
+// waitForJobCompletion polls SnapshotPDFDownloadJob for jobID up to
+// deadline. It surfaces a hard failure if the worker does not finish in
 // time so the suite cannot hang under regression.
 func waitForJobCompletion(t *testing.T, reg *pdfdownload.Registry, jobID paper.DownloadJobID, deadline time.Duration) {
 	t.Helper()
 	end := time.Now().Add(deadline)
 	for time.Now().Before(end) {
-		if reg.JobCompletedForTest(jobID) {
+		snap, err := reg.SnapshotPDFDownloadJob(context.Background(), jobID)
+		if err == nil && snap.Completed {
 			return
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatalf("worker for job %q did not finish within %s", jobID, deadline)
+}
+
+// jobEntries returns the per-entry results for jobID via the public
+// snapshot port. Test helper to keep call sites terse.
+func jobEntries(t *testing.T, reg *pdfdownload.Registry, jobID paper.DownloadJobID) []paper.DownloadEntryResult {
+	t.Helper()
+	snap, err := reg.SnapshotPDFDownloadJob(context.Background(), jobID)
+	if err != nil {
+		t.Fatalf("SnapshotPDFDownloadJob: %v", err)
+	}
+	return snap.Entries
 }
 
 func TestRegistry_Worker(t *testing.T) {
@@ -692,7 +704,7 @@ func TestRegistry_Worker(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.00001", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00001", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00001v1.pdf",
 		}
 		key := pdf.Key{
@@ -710,7 +722,7 @@ func TestRegistry_Worker(t *testing.T) {
 		}
 		waitForJobCompletion(t, reg, snap.JobID, 2*time.Second)
 
-		entries := reg.JobEntriesForTest(snap.JobID)
+		entries := jobEntries(t, reg, snap.JobID)
 		if len(entries) != 1 {
 			t.Fatalf("entries len = %d, want 1", len(entries))
 		}
@@ -761,11 +773,11 @@ func TestRegistry_Worker(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		badReq := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.00001", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00001", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00001v1.pdf",
 		}
 		goodReq := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.00002", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00002", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00002v1.pdf",
 		}
 		badKey := pdf.Key{SourceType: badReq.PaperID.Source, SourceID: badReq.PaperID.PDFArtifactKey(), URL: badReq.PDFURL}
@@ -781,7 +793,7 @@ func TestRegistry_Worker(t *testing.T) {
 		}
 		waitForJobCompletion(t, reg, snap.JobID, 2*time.Second)
 
-		entries := reg.JobEntriesForTest(snap.JobID)
+		entries := jobEntries(t, reg, snap.JobID)
 		if len(entries) != 2 {
 			t.Fatalf("entries len = %d, want 2", len(entries))
 		}
@@ -828,7 +840,7 @@ func TestRegistry_Worker(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.00003", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.00003", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/2404.00003v1.pdf",
 		}
 		key := pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}
@@ -844,7 +856,7 @@ func TestRegistry_Worker(t *testing.T) {
 		}
 		waitForJobCompletion(t, reg, snap.JobID, 2*time.Second)
 
-		entries := reg.JobEntriesForTest(snap.JobID)
+		entries := jobEntries(t, reg, snap.JobID)
 		if len(entries) != 1 {
 			t.Fatalf("entries len = %d, want 1", len(entries))
 		}
@@ -899,7 +911,7 @@ func TestRegistry_FanOut(t *testing.T) {
 		reqs := make([]paper.PDFDownloadRequest, 0, n)
 		for i := 0; i < n; i++ {
 			req := paper.PDFDownloadRequest{
-				PaperID: paper.NewID("arxiv", "2404.0fan0"+string(rune('1'+i)), "v1"),
+				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0fan0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/fanout-" + string(rune('1'+i)) + ".pdf",
 			}
 			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body-" + string(rune('1'+i)))}
@@ -911,9 +923,12 @@ func TestRegistry_FanOut(t *testing.T) {
 			t.Fatalf("Schedule: %v", err)
 		}
 
-		ch, err := reg.AttachTestSubscriberForJob(snap.JobID, 16)
+		backlog, ch, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
 		if err != nil {
-			t.Fatalf("AttachTestSubscriberForJob: %v", err)
+			t.Fatalf("SubscribePDFDownloadJob: %v", err)
+		}
+		if len(backlog) != 0 {
+			t.Fatalf("backlog len = %d, want 0 (gated store, no progress yet)", len(backlog))
 		}
 		close(release)
 
@@ -955,10 +970,17 @@ func TestRegistry_FanOut(t *testing.T) {
 			t.Errorf("summary Completed = false, want true")
 		}
 
-		// Events log is bounded by total+1 and must match what the subscriber saw.
-		log := reg.JobEventsForTest(snap.JobID)
-		if len(log) != n+1 {
-			t.Errorf("events log len = %d, want %d", len(log), n+1)
+		// Subscribing after completion returns the full persisted event log
+		// as backlog (live channel pre-closed); verify it matches the stream.
+		postBacklog, postLive, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
+		if err != nil {
+			t.Fatalf("post-completion Subscribe: %v", err)
+		}
+		if _, ok := <-postLive; ok {
+			t.Errorf("post-completion live channel must be pre-closed")
+		}
+		if len(postBacklog) != n+1 {
+			t.Errorf("events log len = %d, want %d", len(postBacklog), n+1)
 		}
 
 		var completedLog *mocks.LogRecord
@@ -997,12 +1019,11 @@ func TestRegistry_FanOut(t *testing.T) {
 		store := newGatedStore(inner, release)
 		logger := &mocks.RecordingLogger{}
 		clock := mocks.NewMovableClock(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
-		// SubscriberBuffer here covers the public Subscribe contract that
-		// task 2.4 will wire; the test-only AttachTestSubscriberForJob
-		// takes an explicit small bufSize to drive the overflow path.
+		// SubscriberBuffer 1 guarantees the second progress event hits the
+		// non-blocking-send default branch, dropping the subscriber.
 		reg, shutdown := pdfdownload.NewRegistry(store, logger, clock, pdfdownload.Options{
 			Retention:        5 * time.Minute,
-			SubscriberBuffer: 32,
+			SubscriberBuffer: 1,
 		})
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
@@ -1010,7 +1031,7 @@ func TestRegistry_FanOut(t *testing.T) {
 		reqs := make([]paper.PDFDownloadRequest, 0, n)
 		for i := 0; i < n; i++ {
 			req := paper.PDFDownloadRequest{
-				PaperID: paper.NewID("arxiv", "2404.0slow0"+string(rune('1'+i)), "v1"),
+				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0slow0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/slow-" + string(rune('1'+i)) + ".pdf",
 			}
 			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("payload")}
@@ -1022,11 +1043,12 @@ func TestRegistry_FanOut(t *testing.T) {
 			t.Fatalf("Schedule: %v", err)
 		}
 
-		// Tiny buffer (1) guarantees the second progress event hits the
-		// non-blocking-send default branch, dropping the subscriber.
-		slow, err := reg.AttachTestSubscriberForJob(snap.JobID, 1)
+		backlog, slow, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
 		if err != nil {
-			t.Fatalf("AttachTestSubscriberForJob: %v", err)
+			t.Fatalf("SubscribePDFDownloadJob: %v", err)
+		}
+		if len(backlog) != 0 {
+			t.Fatalf("backlog len = %d, want 0 (gated store, no progress yet)", len(backlog))
 		}
 		close(release)
 
@@ -1080,7 +1102,7 @@ func TestRegistry_FanOut(t *testing.T) {
 		reqs := make([]paper.PDFDownloadRequest, 0, n)
 		for i := 0; i < n; i++ {
 			req := paper.PDFDownloadRequest{
-				PaperID: paper.NewID("arxiv", "2404.0fail0"+string(rune('1'+i)), "v1"),
+				PaperID: paper.ID{Source: "arxiv", SourceID: "2404.0fail0"+string(rune('1'+i)), Version: "v1"},
 				PDFURL:  "https://arxiv.org/pdf/fail-" + string(rune('1'+i)) + ".pdf",
 			}
 			inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Err: fmt.Errorf("upstream 503: %w", pdf.ErrFetch)}
@@ -1091,9 +1113,12 @@ func TestRegistry_FanOut(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Schedule: %v", err)
 		}
-		ch, err := reg.AttachTestSubscriberForJob(snap.JobID, 16)
+		backlog, ch, err := reg.SubscribePDFDownloadJob(context.Background(), snap.JobID)
 		if err != nil {
-			t.Fatalf("AttachTestSubscriberForJob: %v", err)
+			t.Fatalf("SubscribePDFDownloadJob: %v", err)
+		}
+		if len(backlog) != 0 {
+			t.Fatalf("backlog len = %d, want 0 (gated store, no progress yet)", len(backlog))
 		}
 		close(release)
 
@@ -1141,7 +1166,7 @@ func TestRegistry_Sweep(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.retain1", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.retain1", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/retain1.pdf",
 		}
 		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("body")}
@@ -1197,7 +1222,7 @@ func TestRegistry_Sweep(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.gated01", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.gated01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/gated.pdf",
 		}
 		inner.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("g")}
@@ -1248,7 +1273,7 @@ func TestRegistry_Sweep(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.evict01", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.evict01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/evict.pdf",
 		}
 		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("e")}
@@ -1316,7 +1341,7 @@ func TestRegistry_Sweep(t *testing.T) {
 		t.Cleanup(func() { _ = shutdown(context.Background()) })
 
 		req := paper.PDFDownloadRequest{
-			PaperID: paper.NewID("arxiv", "2404.swdir01", "v1"),
+			PaperID: paper.ID{Source: "arxiv", SourceID: "2404.swdir01", Version: "v1"},
 			PDFURL:  "https://arxiv.org/pdf/swdir.pdf",
 		}
 		store.Responses[pdf.Key{SourceType: req.PaperID.Source, SourceID: req.PaperID.PDFArtifactKey(), URL: req.PDFURL}] = mocks.PDFStoreResponse{Body: []byte("s")}

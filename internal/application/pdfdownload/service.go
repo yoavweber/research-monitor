@@ -1,5 +1,13 @@
 // Package pdfdownload owns the in-memory registry that implements both
 // paper.PDFScheduler (write side) and paper.PDFDownloadReader (read side).
+//
+// service.go: the Registry struct and the three public methods that
+// satisfy the domain ports. SchedulePDFDownloads creates a job and
+// launches the worker goroutine; SnapshotPDFDownloadJob returns a
+// point-in-time read; SubscribePDFDownloadJob atomically captures the
+// backlog and registers a live channel for SSE. Also owns the jobs map,
+// registryMu, bgCtx, and the Sweep/lazy-eviction logic, plus the
+// NewRegistry constructor and ShutdownFunc.
 package pdfdownload
 
 import (

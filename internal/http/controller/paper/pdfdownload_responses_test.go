@@ -17,7 +17,7 @@ func TestToDownloadEntryResultDTO(t *testing.T) {
 		t.Parallel()
 
 		dto := paperctrl.ToDownloadEntryResultDTO(paper.DownloadEntryResult{
-			PaperID: paper.NewID(paper.SourceArxiv, "2404.12345", "v1"),
+			PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "2404.12345", Version: "v1"},
 			Status:  paper.DownloadStatusPending,
 		})
 
@@ -36,7 +36,7 @@ func TestToDownloadEntryResultDTO(t *testing.T) {
 		ts := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 
 		dto := paperctrl.ToDownloadEntryResultDTO(paper.DownloadEntryResult{
-			PaperID:     paper.NewID(paper.SourceArxiv, "2404.12345", "v1"),
+			PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.12345", Version: "v1"},
 			Status:      paper.DownloadStatusSuccess,
 			Bytes:       1234,
 			CompletedAt: ts,
@@ -80,8 +80,8 @@ func TestToDownloadJobSnapshotDTO(t *testing.T) {
 			Completed:   true,
 			CompletedAt: ts,
 			Entries: []paper.DownloadEntryResult{
-				{PaperID: paper.NewID(paper.SourceArxiv, "1", "v1"), Status: paper.DownloadStatusSuccess, Bytes: 42, CompletedAt: ts},
-				{PaperID: paper.NewID(paper.SourceArxiv, "2", "v1"), Status: paper.DownloadStatusFailed, Category: "fetch", Description: "boom", CompletedAt: ts},
+				{PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "1", Version: "v1"}, Status: paper.DownloadStatusSuccess, Bytes: 42, CompletedAt: ts},
+				{PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "2", Version: "v1"}, Status: paper.DownloadStatusFailed, Category: "fetch", Description: "boom", CompletedAt: ts},
 			},
 		}
 

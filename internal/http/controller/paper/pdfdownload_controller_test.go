@@ -48,20 +48,20 @@ func inProgressSnapshot() paper.DownloadJobSnapshot {
 		Completed: false,
 		Entries: []paper.DownloadEntryResult{
 			{
-				PaperID:     paper.NewID(paper.SourceArxiv, "2404.00001", "v1"),
+				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.00001", Version: "v1"},
 				Status:      paper.DownloadStatusSuccess,
 				Bytes:       12345,
 				CompletedAt: ts,
 			},
 			{
-				PaperID:     paper.NewID(paper.SourceArxiv, "2404.00002", "v1"),
+				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.00002", Version: "v1"},
 				Status:      paper.DownloadStatusFailed,
 				Category:    "fetch",
 				Description: "upstream timeout",
 				CompletedAt: ts,
 			},
 			{
-				PaperID: paper.NewID(paper.SourceArxiv, "2404.00003", "v1"),
+				PaperID: paper.ID{Source: paper.SourceArxiv, SourceID: "2404.00003", Version: "v1"},
 				Status:  paper.DownloadStatusPending,
 			},
 		},
@@ -79,13 +79,13 @@ func completedSnapshot() paper.DownloadJobSnapshot {
 		CompletedAt: ts,
 		Entries: []paper.DownloadEntryResult{
 			{
-				PaperID:     paper.NewID(paper.SourceArxiv, "2404.10001", "v1"),
+				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.10001", Version: "v1"},
 				Status:      paper.DownloadStatusSuccess,
 				Bytes:       4096,
 				CompletedAt: ts,
 			},
 			{
-				PaperID:     paper.NewID(paper.SourceArxiv, "2404.10002", "v2"),
+				PaperID:     paper.ID{Source: paper.SourceArxiv, SourceID: "2404.10002", Version: "v2"},
 				Status:      paper.DownloadStatusSuccess,
 				Bytes:       8192,
 				CompletedAt: ts,
