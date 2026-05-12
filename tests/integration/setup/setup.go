@@ -150,6 +150,12 @@ type TestEnv struct {
 	// false.
 	PDFDownloadRegistry *apppdfdownload.Registry
 
+	// PDFStoreRoot is the on-disk root used by the PDF store. Empty when
+	// WirePDFDownload is false. Exposed so live manual tests can verify
+	// and explicitly delete downloaded artifacts under the canonical
+	// `<root>/<source>/<key>.pdf` layout.
+	PDFStoreRoot string
+
 	Close func()
 }
 
@@ -227,6 +233,7 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		pdfDownloadShutdown apppdfdownload.ShutdownFunc
 		arxivScheduler      apparxiv.DownloadScheduler
 		downloadReader      paperctrl.PDFDownloadReader
+		pdfStoreRoot        string
 	)
 	if o.WirePDFDownload {
 		retention := o.PDFDownloadRetention
@@ -240,9 +247,9 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		// Per-test root keeps file writes isolated. The byte fetcher's
 		// timeout is generous; integration tests serve from an in-process
 		// httptest.Server so transport latency is negligible.
-		storeRoot := filepath.Join(dir, "pdfstore")
+		pdfStoreRoot = filepath.Join(dir, "pdfstore")
 		byteFetcher := httpclient.NewByteFetcher(15*time.Second, "research-monitor-test/1.0")
-		store, err := pdflocal.NewStore(storeRoot, byteFetcher, logger)
+		store, err := pdflocal.NewStore(pdfStoreRoot, byteFetcher, logger)
 		if err != nil {
 			t.Fatalf("pdf local store: %v", err)
 		}
@@ -410,6 +417,7 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		AnalyzerUseCase:     analyzerUseCase,
 		DB:                  db,
 		PDFDownloadRegistry: pdfDownloadRegistry,
+		PDFStoreRoot:        pdfStoreRoot,
 		Close:               closeFn,
 	}
 }
