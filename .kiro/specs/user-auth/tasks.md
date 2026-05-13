@@ -21,7 +21,7 @@
   - _Requirements: 9.1, 9.3, 2.4, 2.5, 3.3, 3.4_
   - _Boundary: domain/shared_
 
-- [ ] 1.3 (P) Add auth env-configuration fields and startup validation
+- [x] 1.3 (P) Add auth env-configuration fields and startup validation
   - Add fields to the env struct in [internal/bootstrap/env.go](../../../internal/bootstrap/env.go): `AccessSecret` (env `AUTH_ACCESS_SECRET`, required), `RefreshSecret` (env `AUTH_REFRESH_SECRET`, required), `AccessTTL` (env `AUTH_ACCESS_TTL`, default `15m`), `RefreshTTL` (env `AUTH_REFRESH_TTL`, default `24h`), `CookieInsecure` (env `AUTH_COOKIE_INSECURE`, default `false`), `RefreshOrigin` (env `AUTH_REFRESH_ORIGIN`, required).
   - Use `v.SetDefault` for the two TTLs and `CookieInsecure`. Bootstrap fails fast at startup when any required secret is empty, when the two secrets are byte-equal, or when either secret is shorter than 32 bytes.
   - `APIToken` field and its existing required-at-startup check remain in place until task 4.5 deletes them — keep the app bootable in the interim.

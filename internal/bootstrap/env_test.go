@@ -24,6 +24,12 @@ func setRequiredEnv(t *testing.T) {
 	// extraction block don't trip the unrelated arxiv validators first.
 	t.Setenv("ARXIV_CATEGORIES", "cs.LG")
 	t.Setenv("ARXIV_MAX_RESULTS", "10")
+	// Auth bootstrap (task 1.3): satisfy the new required vars with valid
+	// 32-byte+ secrets that are distinct from each other, so unrelated tests
+	// don't trip the auth validators before reaching their target check.
+	t.Setenv("AUTH_ACCESS_SECRET", "test-access-secret-padding-0123456789ab")
+	t.Setenv("AUTH_REFRESH_SECRET", "test-refresh-secret-padding-0123456789ab")
+	t.Setenv("AUTH_REFRESH_ORIGIN", "http://localhost:8080")
 }
 
 func TestLoadEnv_HappyPath(t *testing.T) {
@@ -611,6 +617,173 @@ func TestLoadEnv_PDFDownloadSubscriberBuffer(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "PDF_DOWNLOAD_SUBSCRIBER_BUFFER") {
 			t.Errorf("error %q does not mention PDF_DOWNLOAD_SUBSCRIBER_BUFFER", err.Error())
+		}
+	})
+}
+
+// --- auth bootstrap block (task 1.3) -------------------------------------
+//
+// Covers requirements 1.2, 1.3 (cookie attributes and Secure-flag toggle),
+// 1.7, 1.8 (access and refresh TTL defaults), 3.5 (refresh-origin gate),
+// 3.8 (refresh-issued access TTL also derived from the same default), 3.9
+// (refresh and access signing keys must be distinct). The loader must fail
+// fast at startup whenever an `AUTH_*` required var is unset, the two
+// secrets collide, or either secret is shorter than 32 bytes — and the
+// error must name the offending variable so an operator can fix quickly.
+
+const (
+	// 32-byte ASCII strings — the minimum length the loader accepts.
+	testAuthAccessSecret  = "test-access-secret-padding-32byt"
+	testAuthRefreshSecret = "test-refresh-secret-padding-32by"
+	testAuthOrigin        = "http://localhost:8080"
+)
+
+func TestLoadEnv_Auth(t *testing.T) {
+	t.Run("happy path applies defaults and surfaces the configured secrets and origin", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("AUTH_ACCESS_SECRET", testAuthAccessSecret)
+		t.Setenv("AUTH_REFRESH_SECRET", testAuthRefreshSecret)
+		t.Setenv("AUTH_REFRESH_ORIGIN", testAuthOrigin)
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.AccessSecret != testAuthAccessSecret {
+			t.Errorf("AccessSecret = %q, want %q", env.AccessSecret, testAuthAccessSecret)
+		}
+		if env.RefreshSecret != testAuthRefreshSecret {
+			t.Errorf("RefreshSecret = %q, want %q", env.RefreshSecret, testAuthRefreshSecret)
+		}
+		if env.RefreshOrigin != testAuthOrigin {
+			t.Errorf("RefreshOrigin = %q, want %q", env.RefreshOrigin, testAuthOrigin)
+		}
+		if env.AccessTTL != 15*time.Minute {
+			t.Errorf("AccessTTL = %s, want 15m", env.AccessTTL)
+		}
+		if env.RefreshTTL != 24*time.Hour {
+			t.Errorf("RefreshTTL = %s, want 24h", env.RefreshTTL)
+		}
+		if env.CookieInsecure {
+			t.Errorf("CookieInsecure = %v, want false default", env.CookieInsecure)
+		}
+	})
+
+	t.Run("explicit TTLs and CookieInsecure overrides are honored", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("AUTH_ACCESS_TTL", "5m")
+		t.Setenv("AUTH_REFRESH_TTL", "48h")
+		t.Setenv("AUTH_COOKIE_INSECURE", "true")
+
+		env, err := LoadEnv()
+
+		if err != nil {
+			t.Fatalf("LoadEnv returned error: %v", err)
+		}
+		if env.AccessTTL != 5*time.Minute {
+			t.Errorf("AccessTTL = %s, want 5m", env.AccessTTL)
+		}
+		if env.RefreshTTL != 48*time.Hour {
+			t.Errorf("RefreshTTL = %s, want 48h", env.RefreshTTL)
+		}
+		if !env.CookieInsecure {
+			t.Errorf("CookieInsecure = %v, want true", env.CookieInsecure)
+		}
+	})
+
+	t.Run("missing AUTH_ACCESS_SECRET is rejected and names the variable", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("AUTH_ACCESS_SECRET", "")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for empty AUTH_ACCESS_SECRET")
+		}
+		if !strings.Contains(err.Error(), "AUTH_ACCESS_SECRET") {
+			t.Errorf("error %q does not mention AUTH_ACCESS_SECRET", err.Error())
+		}
+	})
+
+	t.Run("missing AUTH_REFRESH_SECRET is rejected and names the variable", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("AUTH_REFRESH_SECRET", "")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for empty AUTH_REFRESH_SECRET")
+		}
+		if !strings.Contains(err.Error(), "AUTH_REFRESH_SECRET") {
+			t.Errorf("error %q does not mention AUTH_REFRESH_SECRET", err.Error())
+		}
+	})
+
+	t.Run("missing AUTH_REFRESH_ORIGIN is rejected and names the variable", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("AUTH_REFRESH_ORIGIN", "")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for empty AUTH_REFRESH_ORIGIN")
+		}
+		if !strings.Contains(err.Error(), "AUTH_REFRESH_ORIGIN") {
+			t.Errorf("error %q does not mention AUTH_REFRESH_ORIGIN", err.Error())
+		}
+	})
+
+	t.Run("byte-equal access and refresh secrets are rejected with a key-separation message", func(t *testing.T) {
+		setRequiredEnv(t)
+		shared := "duplicate-secret-padding-0123456789ab"
+		t.Setenv("AUTH_ACCESS_SECRET", shared)
+		t.Setenv("AUTH_REFRESH_SECRET", shared)
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for byte-equal secrets")
+		}
+		if !strings.Contains(err.Error(), "AUTH_ACCESS_SECRET") || !strings.Contains(err.Error(), "AUTH_REFRESH_SECRET") {
+			t.Errorf("error %q does not name both AUTH_ACCESS_SECRET and AUTH_REFRESH_SECRET", err.Error())
+		}
+		if !strings.Contains(err.Error(), "distinct") && !strings.Contains(err.Error(), "equal") {
+			t.Errorf("error %q does not mention that the secrets must be distinct", err.Error())
+		}
+	})
+
+	t.Run("access secret shorter than 32 bytes is rejected with the minimum named", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("AUTH_ACCESS_SECRET", "too-short")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for short AUTH_ACCESS_SECRET")
+		}
+		if !strings.Contains(err.Error(), "AUTH_ACCESS_SECRET") {
+			t.Errorf("error %q does not mention AUTH_ACCESS_SECRET", err.Error())
+		}
+		if !strings.Contains(err.Error(), "32") {
+			t.Errorf("error %q does not mention the 32-byte minimum", err.Error())
+		}
+	})
+
+	t.Run("refresh secret shorter than 32 bytes is rejected with the minimum named", func(t *testing.T) {
+		setRequiredEnv(t)
+		t.Setenv("AUTH_REFRESH_SECRET", "still-too-short")
+
+		_, err := LoadEnv()
+
+		if err == nil {
+			t.Fatal("LoadEnv returned nil error for short AUTH_REFRESH_SECRET")
+		}
+		if !strings.Contains(err.Error(), "AUTH_REFRESH_SECRET") {
+			t.Errorf("error %q does not mention AUTH_REFRESH_SECRET", err.Error())
+		}
+		if !strings.Contains(err.Error(), "32") {
+			t.Errorf("error %q does not mention the 32-byte minimum", err.Error())
 		}
 	})
 }
