@@ -51,3 +51,14 @@ func AsHTTPError(err error) *HTTPError {
 // implementations wrap (via fmt.Errorf("%w: status=%d", ErrBadStatus, code))
 // to signal a non-2xx HTTP response. Adapters use errors.Is to identify it.
 var ErrBadStatus = errors.New("shared.fetch: upstream returned non-success status")
+
+// Crypto sentinels reported by PasswordHasher and TokenValidator
+// implementations. Adapters wrap or return these directly so use-cases and
+// middleware can branch on the failure mode via errors.Is without coupling to
+// a concrete crypto library.
+var (
+	ErrHashMismatch          = errors.New("shared: hash mismatch")
+	ErrTokenMalformed        = errors.New("shared: token malformed")
+	ErrTokenSignatureInvalid = errors.New("shared: token signature invalid")
+	ErrTokenExpired          = errors.New("shared: token expired")
+)

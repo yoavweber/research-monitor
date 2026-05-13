@@ -14,7 +14,7 @@
   - _Requirements: 9.1, 9.2_
   - _Boundary: go.mod_
 
-- [ ] 1.2 (P) Add cross-cutting auth ports to the shared domain
+- [x] 1.2 (P) Add cross-cutting auth ports to the shared domain
   - Append `PasswordHasher`, `TokenSigner`, `TokenValidator` interfaces with the signatures from design.md to [internal/domain/shared/ports.go](../../../internal/domain/shared/ports.go).
   - Append crypto error sentinels `ErrHashMismatch`, `ErrTokenMalformed`, `ErrTokenSignatureInvalid`, `ErrTokenExpired` to the same file.
   - **Observable**: the three interfaces and four sentinels compile under `go build ./internal/domain/shared/...` with no concrete implementations yet.
