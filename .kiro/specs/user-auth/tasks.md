@@ -29,7 +29,7 @@
   - _Requirements: 1.2, 1.3, 1.7, 1.8, 3.5, 3.8, 3.9_
   - _Boundary: bootstrap/env_
 
-- [ ] 1.4 (P) Create the User domain aggregate
+- [x] 1.4 (P) Create the User domain aggregate
   - Create [internal/domain/user/model.go](../../../internal/domain/user/model.go): `User` entity with `ID uuid.UUID`, `Email string`, `PasswordHash string`, `CreatedAt`, `UpdatedAt time.Time`.
   - Create [internal/domain/user/ports.go](../../../internal/domain/user/ports.go): `user.UseCase` interface (`Login`, `Refresh`, `Session`, `ChangePassword` — no `Logout` method; logout is HTTP-only per design line 426) and `user.Repository` interface (`FindByEmail`, `FindByID`, `Save`, `UpdatePasswordHash`).
   - Create [internal/domain/user/requests.go](../../../internal/domain/user/requests.go): `LoginRequest`, `ChangePasswordRequest` with `Validate()` enforcing email syntax via `net/mail.ParseAddress`, 12-char min and 72-byte max on passwords, returning `*shared.HTTPError` with `WithReason("validation_failed" | "password_too_long")`.
@@ -209,3 +209,9 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 6.1, 6.3, 6.4, 6.6, 6.7, 10.4_
   - _Boundary: tests/integration/auth_session_change_logout_test.go_
   - _Depends: 4.4_
+
+## Implementation Notes
+
+- **Reason-code casing (post-1.4)**: requirements.md Req 9.5 spells the over-72-byte reason as `password-too-long` (hyphen), while design.md uses `password_too_long` (underscore) consistently across login and change-password. Implementation in `internal/domain/user/requests.go` uses **`password_too_long`** (underscore) — match this in tasks 3.2 (controller error envelopes) and 5.1 (integration tests for "password > 72 bytes returns 400 ..."). Same applies if you ever see `password-policy-violation` vs `password_policy_violation`: implementation uses **`password-policy-violation`** (hyphen) — that one matches design.md's casing.
+- **`ChangePasswordRequest.Validate()` checks 72-byte max BEFORE 12-byte min** — a 73-byte new password yields `password_too_long`, not `password-policy-violation`. This honors Req 9.5's universal-cap intent.
+- **`LoginRequest.Validate()` does NOT enforce a 12-byte minimum** on the submitted password — only non-empty + valid email + ≤72 bytes. Short legacy passwords reach the use-case and fail with `invalid_credentials`, not `validation_failed`, per Req 1.5 / 1.6.
