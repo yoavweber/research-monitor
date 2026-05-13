@@ -6,7 +6,7 @@
 
 ## 1. Foundation: dependencies, ports, env, schema
 
-- [ ] 1.1 Add JWT v5 and bcrypt module dependencies
+- [x] 1.1 Add JWT v5 and bcrypt module dependencies
   - Add `github.com/golang-jwt/jwt/v5` pinned at `v5.2.2` or later (the CVE-2025-30204 fix).
   - Add `golang.org/x/crypto/bcrypt`.
   - Run `go mod tidy`; commit `go.mod` and `go.sum`.
