@@ -24,9 +24,9 @@ func setRequiredEnv(t *testing.T) {
 	// extraction block don't trip the unrelated arxiv validators first.
 	t.Setenv("ARXIV_CATEGORIES", "cs.LG")
 	t.Setenv("ARXIV_MAX_RESULTS", "10")
-	// Auth bootstrap (task 1.3): satisfy the new required vars with valid
-	// 32-byte+ secrets that are distinct from each other, so unrelated tests
-	// don't trip the auth validators before reaching their target check.
+	// Satisfy the required AUTH_* vars with distinct 32-byte+ secrets so
+	// unrelated tests don't trip the auth validators before reaching their
+	// target assertion.
 	t.Setenv("AUTH_ACCESS_SECRET", "test-access-secret-padding-0123456789ab")
 	t.Setenv("AUTH_REFRESH_SECRET", "test-refresh-secret-padding-0123456789ab")
 	t.Setenv("AUTH_REFRESH_ORIGIN", "http://localhost:8080")
@@ -621,15 +621,11 @@ func TestLoadEnv_PDFDownloadSubscriberBuffer(t *testing.T) {
 	})
 }
 
-// --- auth bootstrap block (task 1.3) -------------------------------------
+// --- auth bootstrap block -------------------------------------------------
 //
-// Covers requirements 1.2, 1.3 (cookie attributes and Secure-flag toggle),
-// 1.7, 1.8 (access and refresh TTL defaults), 3.5 (refresh-origin gate),
-// 3.8 (refresh-issued access TTL also derived from the same default), 3.9
-// (refresh and access signing keys must be distinct). The loader must fail
-// fast at startup whenever an `AUTH_*` required var is unset, the two
-// secrets collide, or either secret is shorter than 32 bytes — and the
-// error must name the offending variable so an operator can fix quickly.
+// Loader must fail fast at startup whenever an AUTH_* required var is unset,
+// the two secrets collide, or either secret is shorter than 32 bytes — and
+// the error must name the offending variable so an operator can fix quickly.
 
 const (
 	// 32-byte ASCII strings — the minimum length the loader accepts.

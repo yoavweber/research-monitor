@@ -47,7 +47,7 @@ func TestModel_ToDomain(t *testing.T) {
 		}
 	})
 
-	t.Run("returns the zero UUID and an error when the stored ID is malformed", func(t *testing.T) {
+	t.Run("returns nil and an error when the stored ID is malformed", func(t *testing.T) {
 		t.Parallel()
 		m := userpersist.Model{
 			ID:           "not-a-uuid",
@@ -61,9 +61,7 @@ func TestModel_ToDomain(t *testing.T) {
 			t.Fatal("expected error for malformed ID, got nil")
 		}
 		if got != nil {
-			if got.ID != uuid.Nil {
-				t.Errorf("ID = %v want zero UUID", got.ID)
-			}
+			t.Errorf("expected nil user on error, got %+v", got)
 		}
 	})
 }

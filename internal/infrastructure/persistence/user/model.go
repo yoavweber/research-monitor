@@ -39,10 +39,9 @@ func FromDomain(u *domainuser.User) Model {
 	}
 }
 
-// ToDomain parses the stored row into the domain aggregate. A malformed ID
-// is surfaced as an error rather than panicking so callers can map storage
-// corruption to a credentials failure (Requirement 9.4) without leaking the
-// underlying cause.
+// ToDomain parses the stored row into the domain aggregate. A malformed ID is
+// surfaced as an error rather than panicking so callers can map storage
+// corruption to a credentials failure without leaking the underlying cause.
 func (m Model) ToDomain() (*domainuser.User, error) {
 	id, err := uuid.Parse(m.ID)
 	if err != nil {

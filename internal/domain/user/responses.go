@@ -6,9 +6,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// SessionResponse is the wire-format view of the authenticated user. It
-// intentionally omits PasswordHash so credential material never escapes the
-// aggregate.
+// SessionResponse is the wire-format view of the authenticated user. No
+// credential material is included.
 type SessionResponse struct {
 	ID        uuid.UUID `json:"id"`
 	Email     string    `json:"email"`
@@ -24,7 +23,7 @@ type LoginResponse struct {
 }
 
 // RefreshResponse is the JSON body returned by POST /auth/refresh. Refresh
-// tokens are not rotated (Requirement 3.6) so no new cookie is issued.
+// tokens are not rotated, so no new cookie is issued.
 type RefreshResponse struct {
 	AccessToken string    `json:"access_token"`
 	ExpiresAt   time.Time `json:"expires_at"`

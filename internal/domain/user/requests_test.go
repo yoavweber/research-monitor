@@ -1,7 +1,6 @@
 package user_test
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -30,7 +29,7 @@ func TestLoginRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "validation_failed")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonValidationFailed)
 	})
 
 	t.Run("rejects an empty password with reason validation_failed", func(t *testing.T) {
@@ -39,7 +38,7 @@ func TestLoginRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "validation_failed")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonValidationFailed)
 	})
 
 	t.Run("rejects a syntactically invalid email with reason validation_failed", func(t *testing.T) {
@@ -48,7 +47,7 @@ func TestLoginRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "validation_failed")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonValidationFailed)
 	})
 
 	t.Run("rejects a password longer than 72 bytes with reason password_too_long", func(t *testing.T) {
@@ -57,7 +56,7 @@ func TestLoginRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "password_too_long")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonPasswordTooLong)
 	})
 }
 
@@ -87,7 +86,7 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "validation_failed")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonValidationFailed)
 	})
 
 	t.Run("rejects an empty new password with reason validation_failed", func(t *testing.T) {
@@ -99,7 +98,7 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "validation_failed")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonValidationFailed)
 	})
 
 	t.Run("rejects a new password under 12 bytes with reason password-policy-violation", func(t *testing.T) {
@@ -111,7 +110,7 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "password-policy-violation")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonPasswordPolicyViolation)
 	})
 
 	t.Run("rejects a new password over 72 bytes with reason password_too_long", func(t *testing.T) {
@@ -123,7 +122,7 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "password_too_long")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonPasswordTooLong)
 	})
 
 	t.Run("rejects a current password over 72 bytes with reason password_too_long", func(t *testing.T) {
@@ -135,26 +134,21 @@ func TestChangePasswordRequest_Validate(t *testing.T) {
 
 		err := req.Validate()
 
-		assertHTTPError(t, err, http.StatusBadRequest, "password_too_long")
+		assertHTTPError(t, err, http.StatusBadRequest, user.ReasonPasswordTooLong)
 	})
 }
 
 func assertHTTPError(t *testing.T, err error, wantCode int, wantReason string) {
 	t.Helper()
 
-	if err == nil {
-		t.Fatalf("Validate() = nil, want *shared.HTTPError with code %d reason %q", wantCode, wantReason)
+	he := shared.AsHTTPError(err)
+	if he == nil {
+		t.Fatalf("Validate() = %v, want *shared.HTTPError with code %d reason %q", err, wantCode, wantReason)
 	}
-
-	var httpErr *shared.HTTPError
-	if !errors.As(err, &httpErr) {
-		t.Fatalf("Validate() = %v, want *shared.HTTPError", err)
+	if he.Code != wantCode {
+		t.Errorf("HTTPError.Code = %d, want %d", he.Code, wantCode)
 	}
-
-	if httpErr.Code != wantCode {
-		t.Errorf("HTTPError.Code = %d, want %d", httpErr.Code, wantCode)
-	}
-	if httpErr.Reason != wantReason {
-		t.Errorf("HTTPError.Reason = %q, want %q", httpErr.Reason, wantReason)
+	if he.Reason != wantReason {
+		t.Errorf("HTTPError.Reason = %q, want %q", he.Reason, wantReason)
 	}
 }

@@ -2,9 +2,19 @@ package user
 
 import "errors"
 
-// Aggregate-specific sentinels. The controller wraps these as *shared.HTTPError
-// with the appropriate reason code; the use-case and repository return them
-// raw so callers can branch via errors.Is without coupling to HTTP semantics.
+// Reason codes surfaced under error.details.reason in HTTP responses. Producers
+// (DTO validators, use-case, controller) and consumers (tests, frontend) must
+// reference these constants so a single source of truth defines the wire
+// contract. Mixed hyphen/underscore separators are preserved from design.md.
+const (
+	ReasonValidationFailed         = "validation_failed"
+	ReasonPasswordTooLong          = "password_too_long"
+	ReasonPasswordPolicyViolation  = "password-policy-violation"
+	ReasonInvalidCredentials       = "invalid_credentials"
+	ReasonCurrentPasswordIncorrect = "current-password-incorrect"
+	ReasonPasswordUnchanged        = "password-unchanged"
+)
+
 var (
 	ErrNotFound                 = errors.New("user: not found")
 	ErrEmailExists              = errors.New("user: email already exists")
