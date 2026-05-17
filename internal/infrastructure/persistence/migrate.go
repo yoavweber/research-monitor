@@ -9,6 +9,7 @@ import (
 	extractionpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	sourcemodel "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
+	userpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/user"
 )
 
 // AutoMigrate runs GORM AutoMigrate over every persistence model in the repo.
@@ -19,6 +20,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&paperpersist.Paper{},
 		&extractionpersist.Extraction{},
 		&analyzerpersist.Analysis{},
+		&userpersist.Model{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}

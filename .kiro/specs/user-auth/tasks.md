@@ -39,7 +39,7 @@
   - _Requirements: 1.6, 5.1, 5.3, 6.3, 6.5, 6.6, 7.5, 9.5_
   - _Boundary: domain/user_
 
-- [ ] 1.5 Add User persistence model and register with AutoMigrate
+- [x] 1.5 Add User persistence model and register with AutoMigrate
   - Create [internal/infrastructure/persistence/user/model.go](../../../internal/infrastructure/persistence/user/model.go): GORM `Model` struct with `ID string` (text PK), `Email` (not null, unique index), `PasswordHash` (not null), `CreatedAt`, `UpdatedAt`; `TableName() = "users"`; `ToDomain()` and `FromDomain()` converting `uuid.UUID` ↔ `string`. Package declaration is `package user` (consumers will import as `userpersist`).
   - Append `&userpersist.Model{}` to the `AutoMigrate` call in [internal/infrastructure/persistence/migrate.go](../../../internal/infrastructure/persistence/migrate.go), importing the persistence package under the alias `userpersist` to avoid collision with the domain `user` package.
   - **Observable**: starting the app (or running `task seed`) creates a `users` table in the SQLite DB with the expected columns and a unique index on `email`. Inspect with `sqlite3 <db> '.schema users'`.
