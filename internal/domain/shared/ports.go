@@ -64,21 +64,17 @@ type PasswordHasher interface {
 	Verify(plain, hash string) error // returns ErrHashMismatch on mismatch
 }
 
-// TokenSigner issues signed access and refresh tokens for a given subject
-// (typically a user UUID string). Access and refresh use separate signing
-// keys so a refresh token presented as an access token fails signature
-// verification immediately. Returned expiresAt reflects the token's exp claim
-// in absolute wall-clock time.
+// TokenSigner issues a signed token for a given subject (typically a user
+// UUID string). Returned expiresAt reflects the token's exp claim in absolute
+// wall-clock time.
 type TokenSigner interface {
-	IssueAccess(subject string) (token string, expiresAt time.Time, err error)
-	IssueRefresh(subject string) (token string, expiresAt time.Time, err error)
+	Issue(subject string) (token string, expiresAt time.Time, err error)
 }
 
-// TokenValidator verifies signed access and refresh tokens and returns the
-// embedded subject. Implementations distinguish malformed input, invalid
-// signature, and expired tokens via the ErrToken* sentinels so callers can
-// translate each case into the right HTTP response.
+// TokenValidator verifies a signed token and returns the embedded subject.
+// Implementations distinguish malformed input, invalid signature, and expired
+// tokens via the ErrToken* sentinels so callers can translate each case into
+// the right HTTP response.
 type TokenValidator interface {
-	VerifyAccess(token string) (subject string, err error)
-	VerifyRefresh(token string) (subject string, err error)
+	Verify(token string) (subject string, err error)
 }

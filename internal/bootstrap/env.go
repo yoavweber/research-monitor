@@ -46,22 +46,13 @@ type Env struct {
 	// ships, so analyzer requests can never silently no-op.
 	LLMProvider string `mapstructure:"LLM_PROVIDER"`
 
-	// Auth bootstrap. Secrets are required and must be ≥ 32 bytes and
-	// byte-distinct from each other so a forged refresh token cannot pass
-	// access-token verification (and vice versa). CookieInsecure flips the
-	// refresh cookie's Secure flag off for local non-TLS dev only.
-	AccessSecret   string        `mapstructure:"AUTH_ACCESS_SECRET"`
-	RefreshSecret  string        `mapstructure:"AUTH_REFRESH_SECRET"`
-	AccessTTL      time.Duration `mapstructure:"AUTH_ACCESS_TTL"`
-	RefreshTTL     time.Duration `mapstructure:"AUTH_REFRESH_TTL"`
-	CookieInsecure bool          `mapstructure:"AUTH_COOKIE_INSECURE"`
-	RefreshOrigin  string        `mapstructure:"AUTH_REFRESH_ORIGIN"`
+	// 32-byte minimum on the HMAC signing key matches the HS256 block size and
+	// rules out the "joined two short literals" misconfiguration that would
+	// weaken the keyed MAC below the recommended margin.
+	JWTSecret string        `mapstructure:"AUTH_JWT_SECRET"`
+	JWTTTL    time.Duration `mapstructure:"AUTH_JWT_TTL"`
 }
 
-// authSecretMinBytes is the minimum byte length we accept for either
-// HMAC signing key. 32 bytes matches the HS256 block size and rules out
-// the "joined two short literals" misconfiguration that would weaken
-// the keyed MAC below the recommended security margin.
 const authSecretMinBytes = 32
 
 func LoadEnv() (*Env, error) {
@@ -87,9 +78,7 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("PDF_DOWNLOAD_RETENTION", "5m")
 	v.SetDefault("PDF_DOWNLOAD_SUBSCRIBER_BUFFER", 32)
 	v.SetDefault("LLM_PROVIDER", "fake")
-	v.SetDefault("AUTH_ACCESS_TTL", "15m")
-	v.SetDefault("AUTH_REFRESH_TTL", "24h")
-	v.SetDefault("AUTH_COOKIE_INSECURE", false)
+	v.SetDefault("AUTH_JWT_TTL", "24h")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
 	// observes it even when no .env file and no default exists. Without this,
@@ -113,12 +102,8 @@ func LoadEnv() (*Env, error) {
 		"PDF_DOWNLOAD_RETENTION",
 		"PDF_DOWNLOAD_SUBSCRIBER_BUFFER",
 		"LLM_PROVIDER",
-		"AUTH_ACCESS_SECRET",
-		"AUTH_REFRESH_SECRET",
-		"AUTH_ACCESS_TTL",
-		"AUTH_REFRESH_TTL",
-		"AUTH_COOKIE_INSECURE",
-		"AUTH_REFRESH_ORIGIN",
+		"AUTH_JWT_SECRET",
+		"AUTH_JWT_TTL",
 	} {
 		_ = v.BindEnv(key)
 	}
@@ -200,36 +185,22 @@ func LoadEnv() (*Env, error) {
 		return nil, fmt.Errorf("LLM_PROVIDER must be one of [fake, anthropic] (got %q)", env.LLMProvider)
 	}
 
-	if err := validateAuthSecrets(env.AccessSecret, env.RefreshSecret); err != nil {
+	if err := validateJWTSecret(env.JWTSecret); err != nil {
 		return nil, err
-	}
-	if env.RefreshOrigin == "" {
-		return nil, fmt.Errorf("AUTH_REFRESH_ORIGIN is required and must match the Origin/Referer the browser will send to /auth/refresh")
 	}
 
 	return &env, nil
 }
 
-// validateAuthSecrets enforces the three startup rules on the JWT signing
-// keys: both must be present, both must be at least 32 bytes, and the two
-// must be byte-distinct so a refresh token forged with one key cannot be
-// accepted by the other verifier. Each error names the offending variable
-// so an operator can fix the misconfiguration without reading the source.
-func validateAuthSecrets(access, refresh string) error {
-	if access == "" {
-		return fmt.Errorf("AUTH_ACCESS_SECRET is required and must be a HMAC key of at least %d bytes", authSecretMinBytes)
+// validateJWTSecret enforces presence and minimum length on the HMAC signing
+// key. The error names the offending variable so an operator can fix the
+// misconfiguration without reading the source.
+func validateJWTSecret(secret string) error {
+	if secret == "" {
+		return fmt.Errorf("AUTH_JWT_SECRET is required and must be a HMAC key of at least %d bytes", authSecretMinBytes)
 	}
-	if refresh == "" {
-		return fmt.Errorf("AUTH_REFRESH_SECRET is required and must be a HMAC key of at least %d bytes", authSecretMinBytes)
-	}
-	if len(access) < authSecretMinBytes {
-		return fmt.Errorf("AUTH_ACCESS_SECRET is shorter than the %d-byte minimum (got %d bytes)", authSecretMinBytes, len(access))
-	}
-	if len(refresh) < authSecretMinBytes {
-		return fmt.Errorf("AUTH_REFRESH_SECRET is shorter than the %d-byte minimum (got %d bytes)", authSecretMinBytes, len(refresh))
-	}
-	if access == refresh {
-		return fmt.Errorf("AUTH_ACCESS_SECRET and AUTH_REFRESH_SECRET must be distinct so a forged refresh token cannot pass access verification (and vice versa)")
+	if len(secret) < authSecretMinBytes {
+		return fmt.Errorf("AUTH_JWT_SECRET is shorter than the %d-byte minimum (got %d bytes)", authSecretMinBytes, len(secret))
 	}
 	return nil
 }
