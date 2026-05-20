@@ -64,7 +64,7 @@
   - _Requirements: 1.5, 2.4, 2.5, 2.7_
   - _Boundary: infrastructure/auth_
 
-- [ ] 2.3 (P) User repository (GORM) with colocated unit test
+- [x] 2.3 (P) User repository (GORM) with colocated unit test
   - `internal/infrastructure/persistence/user/repo.go`: `NewRepository(db *gorm.DB) user.Repository`. Maps `gorm.ErrRecordNotFound` → `user.ErrNotFound`; SQLite unique-constraint violation → `user.ErrEmailExists`. `UpdatePasswordHash` updates only the `password_hash` and `updated_at` columns explicitly.
   - Colocated test using `tests/testdb.New(t)`: `Save persists`; `Save returns ErrEmailExists on duplicate`; `FindByEmail` / `FindByID` hit and miss paths; `UpdatePasswordHash` replaces only the hash and bumps `updated_at`.
   - **Observable**: `go test ./internal/infrastructure/persistence/user/...` passes against a temp SQLite DB.
