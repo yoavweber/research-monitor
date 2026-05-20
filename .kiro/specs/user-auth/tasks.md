@@ -56,7 +56,7 @@
   - _Requirements: 7.1, 7.2, 7.3_
   - _Boundary: infrastructure/auth_
 
-- [ ] 2.2 (P) JWT token service with colocated unit test
+- [x] 2.2 (P) JWT token service with colocated unit test
   - `internal/infrastructure/auth/jwt_token_service.go`: `JWTConfig{Secret []byte; TTL time.Duration; Clock shared.Clock}`. `NewJWTTokenService(cfg JWTConfig)` implements both `shared.TokenSigner` and `shared.TokenValidator`. Claims: `sub`, `iat`, `exp`. HS256. Always check `token.Valid` alongside the parse error (CVE-2024-51744).
   - Error mapping: `jwt.ErrTokenExpired` → `shared.ErrTokenExpired`; signature errors → `shared.ErrTokenSignatureInvalid`; parse/malformed → `shared.ErrTokenMalformed`.
   - Colocated test driving a deterministic clock: `Issue then Verify round-trips`; `expired token returns ErrTokenExpired`; `token whose signature does not match the key returns ErrTokenSignatureInvalid`; `token that parses but has Valid=false fails`.
