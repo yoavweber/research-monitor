@@ -48,7 +48,7 @@
 
 ## 2. Core adapters
 
-- [ ] 2.1 (P) Bcrypt password hasher with colocated unit test
+- [x] 2.1 (P) Bcrypt password hasher with colocated unit test
   - `internal/infrastructure/auth/bcrypt_hasher.go`: `NewBcryptHasher(cost int) shared.PasswordHasher`. `Hash` uses `bcrypt.GenerateFromPassword(pw, cost)`. `Verify` returns `shared.ErrHashMismatch` on `bcrypt.ErrMismatchedHashAndPassword`.
   - Bootstrap will construct with cost 12; tests with cost 4 for speed.
   - Colocated test: round-trip + mismatch returns `ErrHashMismatch` + empty-input rejection.
