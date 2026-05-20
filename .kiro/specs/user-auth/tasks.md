@@ -71,7 +71,7 @@
   - _Requirements: 5.5, 3.1, 4.1, 1.1_
   - _Boundary: infrastructure/persistence/user_
 
-- [ ] 2.4 (P) JWTAuth middleware with colocated unit test
+- [x] 2.4 (P) JWTAuth middleware with colocated unit test
   - `internal/http/middleware/jwt_auth.go`: `JWTAuth(validator shared.TokenValidator) gin.HandlerFunc`. Reads `Authorization: Bearer <token>`. Maps errors to `*shared.HTTPError` with reason codes `credentials_missing`, `credentials_malformed`, `invalid_access_token`, `expired_access_token`, `malformed_access_token`. On success: `c.Set("user_id", uuid.UUID(subject))` and `c.Next()`. Never consults a DB.
   - Colocated test using real `JWTTokenService` to mint tokens with controlled expiry: every error branch + happy path.
   - **Observable**: `go test ./internal/http/middleware/...` passes; assertions check both status and `details.reason`.
