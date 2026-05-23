@@ -92,7 +92,7 @@
   - _Boundary: application/user_
   - _Depends: 2.1, 2.2, 2.3_
 
-- [ ] 3.2 Auth controller and swag annotations
+- [x] 3.2 Auth controller and swag annotations
   - Create `internal/http/controller/auth_controller.go` and `auth_responses.go`. Constructor: `NewAuthController(uc user.UseCase, validator shared.TokenValidator) *AuthController` — no cookie config, no origin config needed.
   - Login: bind body; call `req.Validate()`; call `uc.Login`. On success serialize `LoginResponse` (access token + expiry + user). No cookie, no Set-Cookie header.
   - Session: read `user_id` from the Gin context (set by `JWTAuth`); call `uc.Session`; return `SessionResponse`.
@@ -106,7 +106,7 @@
 
 - [ ] 3.3 Auth router and `route.Deps` extension
   - Extend `route.Deps` in [internal/http/route/route.go](../../../internal/http/route/route.go) with `Hasher shared.PasswordHasher`, `Signer shared.TokenSigner`, `Validator shared.TokenValidator`, `JWTTTL time.Duration`, and an engine/root-group reference so the unauthenticated `POST /auth/login` can mount outside `/api`.
-  - Create `internal/http/route/auth_route.go`: `AuthRouter(d Deps)` builds `repo := userpersist.NewRepository(d.DB)`, `uc := application.NewUserUseCase(repo, d.Hasher, d.Signer, d.Clock, d.Logger)`, `ctrl := controller.NewAuthController(uc, d.Validator)`. Mounts unauthenticated `POST /auth/login` on the root group; mounts `GET /auth/session` and `POST /auth/change-password` under `Group("/auth", middleware.JWTAuth(d.Validator))`.
+  - Create `internal/http/route/auth_route.go`: `AuthRouter(d Deps)` builds `repo := userpersist.NewRepository(d.DB)`, `uc := application.NewUserUseCase(repo, d.Hasher, d.Signer, d.Clock, d.Logger)`, `ctrl := controller.NewAuthController(uc)` — the controller does not need the validator at construction time; the middleware uses it. Mounts unauthenticated `POST /auth/login` on the root group; mounts `GET /auth/session` and `POST /auth/change-password` under `Group("/auth", middleware.JWTAuth(d.Validator))`.
   - **Observable**: `AuthRouter(d)` registers exactly three new endpoints; `go vet ./internal/http/route/...` is clean.
   - _Requirements: 6.5_
   - _Boundary: http/route_
