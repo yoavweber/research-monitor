@@ -113,7 +113,7 @@
 
 ## 4. Composition root and migration
 
-- [ ] 4.1 (P) SeedUser helper and `cmd/seed users` subcommand
+- [x] 4.1 (P) SeedUser helper and `cmd/seed users` subcommand
   - Add `SeedUser(ctx context.Context, db *gorm.DB, hasher shared.PasswordHasher, log shared.Logger, email, plain string) error` to `internal/bootstrap/seed.go`. Validate email syntax and password policy. Build the repo via `userpersist.NewRepository(db)`. Hash via `hasher.Hash(plain)`. Call `repo.Save`; on `user.ErrEmailExists` log `"seed.user.skipped"` and return nil. Never log `plain` (Req 8.5).
   - Update `cmd/seed/main.go` to dispatch on `os.Args[1]`: no args → existing `SeedSources`; `users <email> <password>` → calls `SeedUser` constructing `NewBcryptHasher(12)`; `-h` documents both. Weak password / bad email exits non-zero without writing the row.
   - **Observable**: `seed users alice@example.com Password123abc!` creates a row idempotently; re-running prints `seed.user.skipped` and exits 0; `seed users alice@example.com weak` exits non-zero.
