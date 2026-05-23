@@ -81,7 +81,7 @@
 
 ## 3. Application + HTTP surface
 
-- [ ] 3.1 User use-case implementation with colocated unit test
+- [x] 3.1 User use-case implementation with colocated unit test
   - `internal/application/user_usecase.go`: `NewUserUseCase(repo user.Repository, hasher shared.PasswordHasher, signer shared.TokenSigner, clock shared.Clock, log shared.Logger) user.UseCase`. Implements `Login`, `Session`, `ChangePassword` only.
   - Login flow: lookup by email; verify password; on either failure return `user.ErrInvalidCredentials` (same error for unknown email and wrong password). On match, issue a JWT and return `user.LoginResult`. Emit info log on success and warn log on failure; never log password material or token strings.
   - ChangePassword flow: load user by id; verify current password (wrong → `ErrCurrentPasswordIncorrect`); enforce policy via `Validate()`; reject byte-equal new password (`ErrPasswordUnchanged`); hash new password; call `UpdatePasswordHash`. Pre-change tokens stay valid until expiry (Req 4.7).
@@ -219,3 +219,6 @@
 - **`ChangePasswordRequest.Validate()` checks 72-byte max BEFORE 12-byte min** — a 73-byte new password yields `password_too_long`, not `password-policy-violation`. This honors Req 7.5's universal-cap intent.
 - **`LoginRequest.Validate()` does NOT enforce a 12-byte minimum** on the submitted password — only non-empty + valid email + ≤72 bytes. Short legacy passwords reach the use-case and fail with `invalid_credentials`, not `validation_failed`, per Req 1.3.
 - **Single-token model**: this spec is **not** the gridbot-style access+refresh design. There is one JWT (24h TTL, single signing key). No refresh endpoint, no cookie, no logout endpoint, no `Origin`/`Referer` check. If those return as needs, they go in a new spec.
+- **request_id bridge (3.1 → 3.2)**: task 3.1 added `application.WithRequestID(ctx, id)` (and an internal `requestIDFromContext`) because `middleware.RequestID` writes only to the Gin context, not `context.Context`. The auth controller in task 3.2 must call `ctx = application.WithRequestID(c.Request.Context(), c.GetString(middleware.RequestIDKey))` before invoking any use-case method; otherwise the `request_id` field in `auth.login.*` and `auth.change_password.*` log lines will be empty. The use-case still works correctly with an empty request_id — it just degrades log traceability.
+- **Use-case event names (3.1)**: `auth.login.ok` (info), `auth.login.failed` (warn), `auth.change_password.ok` (info), `auth.change_password.failed` (warn). Match these strings in any integration test that grep's log lines.
+- **Unused `clock` parameter on `NewUserUseCase`**: the constructor takes `shared.Clock` per design.md but the current 3-method implementation never reads it (the signer carries its own clock for expiry). Kept for design fidelity and as a forward seat for future deterministic-timestamp needs (e.g., lockout). Not a defect — do not "simplify" by removing it without a spec change.
