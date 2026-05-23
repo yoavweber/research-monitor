@@ -1,6 +1,8 @@
 package route
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -63,11 +65,21 @@ type AnalyzerConfig struct {
 
 // Deps are the shared dependencies passed to every per-resource router.
 // Per-resource routers construct their own repo → usecase → controller chains from these.
+//
+// Group is the protected /api subgroup; RootGroup is the engine-level group
+// without the auth guard, used to mount unauthenticated endpoints such as
+// POST /auth/login alongside the JWT-protected /auth subgroup that
+// AuthRouter builds on top of it.
 type Deps struct {
 	Group      *gin.RouterGroup
+	RootGroup  *gin.RouterGroup
 	DB         *gorm.DB
 	Logger     shared.Logger
 	Clock      shared.Clock
+	Hasher     shared.PasswordHasher
+	Signer     shared.TokenSigner
+	Validator  shared.TokenValidator
+	JWTTTL     time.Duration
 	Arxiv      ArxivConfig
 	Paper      PaperConfig
 	PDF        PDFConfig

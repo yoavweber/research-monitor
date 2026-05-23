@@ -104,7 +104,7 @@
   - _Requirements: 1.1, 1.4, 1.5, 3.1, 3.2, 3.3, 4.1, 4.2, 4.3, 4.4, 4.7, 6.5, 8.1, 8.2, 8.3, 8.4_
   - _Boundary: http/controller_
 
-- [ ] 3.3 Auth router and `route.Deps` extension
+- [x] 3.3 Auth router and `route.Deps` extension
   - Extend `route.Deps` in [internal/http/route/route.go](../../../internal/http/route/route.go) with `Hasher shared.PasswordHasher`, `Signer shared.TokenSigner`, `Validator shared.TokenValidator`, `JWTTTL time.Duration`, and an engine/root-group reference so the unauthenticated `POST /auth/login` can mount outside `/api`.
   - Create `internal/http/route/auth_route.go`: `AuthRouter(d Deps)` builds `repo := userpersist.NewRepository(d.DB)`, `uc := application.NewUserUseCase(repo, d.Hasher, d.Signer, d.Clock, d.Logger)`, `ctrl := controller.NewAuthController(uc)` — the controller does not need the validator at construction time; the middleware uses it. Mounts unauthenticated `POST /auth/login` on the root group; mounts `GET /auth/session` and `POST /auth/change-password` under `Group("/auth", middleware.JWTAuth(d.Validator))`.
   - **Observable**: `AuthRouter(d)` registers exactly three new endpoints; `go vet ./internal/http/route/...` is clean.
