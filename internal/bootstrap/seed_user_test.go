@@ -202,7 +202,7 @@ func TestSeedUser(t *testing.T) {
 
 // assertNoSecret walks every recorded log entry and fails the test if the
 // plaintext appears in any message, key, or value. The check is intentionally
-// blunt — a single sighting is a credential leak (Req 8.5).
+// blunt — a single sighting is a credential leak.
 func assertNoSecret(t *testing.T, log *mocks.RecordingLogger, secret string) {
 	t.Helper()
 	for _, r := range log.Records {

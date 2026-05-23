@@ -14,7 +14,7 @@ import (
 )
 
 // bcryptProdCost is the production-grade bcrypt work factor. It matches the
-// baseline the design picks for user-auth (Req 7.2): expensive enough to slow
+// baseline the design picks for user-auth: expensive enough to slow
 // offline cracking, cheap enough that login latency stays in single-digit
 // hundreds of milliseconds on the operator host.
 const bcryptProdCost = 12
@@ -73,7 +73,7 @@ func runSeedSources(ctx context.Context) {
 
 // runSeedUsers parses the `users` subcommand arguments and delegates to
 // bootstrap.SeedUser. Errors from the helper are surfaced verbatim to stderr
-// — they are already crafted to omit the plaintext password (Req 8.5).
+// — they are already crafted to omit the plaintext password.
 func runSeedUsers(ctx context.Context, args []string) {
 	if len(args) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: seed users <email> <password>")
