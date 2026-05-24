@@ -15,7 +15,10 @@ import (
 	apppdfdownload "github.com/yoavweber/research-monitor/backend/internal/application/pdfdownload"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
+	"github.com/yoavweber/research-monitor/backend/internal/http/route"
 	arxivinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
+	authinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/auth"
 	mineruadapter "github.com/yoavweber/research-monitor/backend/internal/infrastructure/extraction/mineru"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	llmstub "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
@@ -25,8 +28,6 @@ import (
 	analyzerrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/analyzer"
 	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
-	"github.com/yoavweber/research-monitor/backend/internal/http/route"
 )
 
 type App struct {
@@ -191,12 +192,34 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 		shared.SystemClock{},
 	)
 
+	// The JWT signer/validator and bcrypt hasher are constructed exactly
+	// once per process. The same JWTTokenService instance satisfies both
+	// shared.TokenSigner (used by the login use-case) and shared.TokenValidator
+	// (used by the JWTAuth middleware on the protected /auth subgroup), so the
+	// signing key and clock cannot diverge between issue and verify paths.
+	clock := shared.SystemClock{}
+	jwtService := authinfra.NewJWTTokenService(authinfra.JWTConfig{
+		Secret: []byte(env.JWTSecret),
+		TTL:    env.JWTTTL,
+		Clock:  clock,
+	})
+	hasher := authinfra.NewBcryptHasher(12)
+
+	// rootGroup carries no auth middleware so unauthenticated endpoints
+	// (POST /auth/login) can mount on it; AuthRouter layers JWTAuth onto a
+	// nested /auth subgroup for the protected pair.
+	rootGroup := engine.Group("/")
 	api := engine.Group("/api", middleware.APIToken(env.APIToken))
-	route.Setup(route.Deps{
-		Group:  api,
-		DB:     db,
-		Logger: logger,
-		Clock:  shared.SystemClock{},
+	deps := route.Deps{
+		Group:     api,
+		RootGroup: rootGroup,
+		DB:        db,
+		Logger:    logger,
+		Clock:     clock,
+		Hasher:    hasher,
+		Signer:    jwtService,
+		Validator: jwtService,
+		JWTTTL:    env.JWTTTL,
 		Arxiv: route.ArxivConfig{
 			Fetcher:   arxivFetcher,
 			Query:     query,
@@ -211,15 +234,17 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 			Worker:  extractionWorker,
 		},
 		Analyzer: route.AnalyzerConfig{UseCase: analyzerUseCase},
-	})
+	}
+	route.Setup(deps)
+	route.AuthRouter(deps)
 
 	return &App{
-		Env:                  env,
-		DB:                   db,
-		Engine:               engine,
-		Logger:               logger,
-		extractionWorker:     extractionWorker,
-		pdfDownloadShutdown:  pdfDownloadShutdown,
+		Env:                 env,
+		DB:                  db,
+		Engine:              engine,
+		Logger:              logger,
+		extractionWorker:    extractionWorker,
+		pdfDownloadShutdown: pdfDownloadShutdown,
 	}, nil
 }
 

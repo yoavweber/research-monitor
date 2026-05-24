@@ -120,7 +120,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 8.5_
   - _Boundary: bootstrap/seed, cmd/seed_
 
-- [ ] 4.2 (P) Wire JWT token service and mount `/auth` router additively
+- [x] 4.2 (P) Wire JWT token service and mount `/auth` router additively
   - In `internal/bootstrap/app.go`, construct a single `JWTTokenService` from `AUTH_JWT_SECRET` + `AUTH_JWT_TTL` and pass it into `route.Deps` as both `Signer` and `Validator`. Also pass `NewBcryptHasher(12)` as `Hasher` and the TTL.
   - Call `route.AuthRouter(d)` on the **root** group (not `/api`) so login is reachable without a token. Authenticated routes live under the auth subgroup created by `AuthRouter`.
   - **Additive only**: the existing `middleware.APIToken(env.APIToken)` mount on `/api` stays in place; existing static-token tests keep passing.
