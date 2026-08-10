@@ -57,6 +57,7 @@ Personal DeFi research monitor backend. The system ingests papers (and later, go
 - llm-analyzer — implementation complete, but wired to `infrastructure/llm/stub` only. Real provider integration (Anthropic) was explicitly deferred as a follow-up spec and has no spec yet — by design, deferred until the rest of the pipeline is done.
 - pdf-storage — tasks-approved, all tasks complete (local filesystem `pdf.Store`, consumed by `document-extraction` and `arxiv-pdf-download`)
 - arxiv-pdf-download — implementation complete, merged PR #6 (2026-05-11). Downloads each fetched entry's PDF into `pdf.Store` fire-and-forget after `/api/arxiv/fetch` persists it, with SSE (`GET /api/arxiv/downloads/:job_id/stream`) and REST (`GET /api/arxiv/downloads/:job_id`) status. Reused `pdf.Store` unchanged; no persistence of `download_status` to the DB (in-memory job registry).
+- user-auth — implementation complete, merged directly to `main` 2026-08-11 (no PR — pushed straight from a local worktree, unlike every other spec above). Replaces the static `X-API-Token` with email+password login (`POST /auth/login`) issuing a stateless 24h JWT (`Authorization: Bearer`); `GET /auth/session`, `POST /auth/change-password`; users provisioned via `task seed:user -- <email> <password>`. No roles, no refresh tokens, no logout endpoint. Local dev token caching via `task dev:login -- <email> <password>` (writes `.dev-token`).
 
 ## Known Gaps
 
