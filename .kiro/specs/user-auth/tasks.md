@@ -184,7 +184,7 @@
   - _Boundary: tests/integration/auth_login_test.go_
   - _Depends: 4.4_
 
-- [ ] 5.2 (P) Integration tests for protected `/api/*` JWT guard
+- [x] 5.2 (P) Integration tests for protected `/api/*` JWT guard
   - Create `tests/integration/auth_api_guard_test.go`. Use `GET /api/sources` as the representative protected endpoint. Subtests:
     - `request without Authorization header returns 401 with reason=credentials_missing`
     - `request with a non-Bearer scheme returns 401 with reason=credentials_malformed`
