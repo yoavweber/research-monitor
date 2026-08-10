@@ -172,7 +172,7 @@
 
 ## 5. End-to-end integration tests for new auth flows
 
-- [ ] 5.1 (P) Integration tests for `/auth/login`
+- [x] 5.1 (P) Integration tests for `/auth/login`
   - Create `tests/integration/auth_login_test.go`. Use `SetupTestEnv(t)` plus `setup.SeedTestUser`. Subtests:
     - `login with correct credentials returns 200 with access token and user payload` (asserts user.id, user.email; no password hash field anywhere in the body)
     - `login with unknown email and login with wrong password return identical 401 envelopes with reason=invalid_credentials`
