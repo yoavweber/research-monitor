@@ -31,7 +31,7 @@ Personal DeFi research monitor backend. The system ingests papers (and later, go
 - Stack is Go 1.25 + Gin + GORM/SQLite per [tech.md](./tech.md). New file storage must respect the dependency rule in [structure.md](./structure.md): port in `domain/`, implementation in `infrastructure/`.
 - `arxiv-fetcher` is implementation-complete (`tasks-approved`, all tasks done). Extending it requires re-running `/kiro-spec-requirements arxiv-fetcher` to amend its requirements + tasks.
 - `document-extraction` is implementation-complete; no interleaving concern remains.
-- `arxiv-pdf-download` (spec complete, tasks approved, not yet implemented) also modifies `application/arxiv`'s use case and `arxivctrl.FetchResponse` — the same seam this roadmap entry touches. Sequence the two; do not run them in parallel worktrees.
+- `arxiv-pdf-download` is implementation-complete (merged, PR #6) and already modified `application/arxiv`'s use case and `arxivctrl.FetchResponse` for the same seam this roadmap entry touches (`internal/http/controller/arxiv/responses.go`, `internal/application/arxiv/usecase.go`). Read those files before amending `arxiv-fetcher` — this entry's changes land on top of that PR, not on the pre-PR shape.
 
 ## Boundary Strategy
 
@@ -47,19 +47,20 @@ Personal DeFi research monitor backend. The system ingests papers (and later, go
 
 ## Specs (dependency order)
 
-- [ ] arxiv-pdf-download — downloads each fetched entry's PDF into `pdf.Store` after `/api/arxiv/fetch` persists it, fire-and-forget with SSE + REST status endpoints. Spec complete, tasks approved, not yet implemented. Closes the fetch→extract gap: today `document-extraction` requires the operator to hand-supply a `pdf_path`. Dependencies: none (reuses existing `pdf.Store` unchanged).
-- [ ] arxiv-search-defaults — file-backed `SearchDefaults` port providing a default keyword list and default date window, hand-edited via a JSON/YAML file on disk, no HTTP surface. Dependencies: none. Touches the same `application/arxiv` use case as `arxiv-pdf-download` — sequence after it.
+- [ ] arxiv-search-defaults — file-backed `SearchDefaults` port providing a default keyword list and default date window, hand-edited via a JSON/YAML file on disk, no HTTP surface. Dependencies: none. Touches `application/arxiv`'s use case, which `arxiv-pdf-download` also modified — read that spec's boundary section before amending.
 
 ## Completed / In-flight (not part of this roadmap entry)
 
 - arxiv-fetcher — tasks-approved, all tasks complete (manual fetch, env-only categories, no filters; this roadmap entry extends it)
 - paper-persistence — tasks-approved, all tasks complete (catalogue + auto-persist on fetch)
 - document-extraction — implementation complete
-- llm-analyzer — implementation complete, but wired to `infrastructure/llm/stub` only. Real provider integration (Anthropic) was explicitly deferred as a follow-up spec and has no spec yet — by design, deferred until the rest of the pipeline (through `arxiv-pdf-download`) is done.
-- pdf-storage — tasks-approved, all tasks complete (local filesystem `pdf.Store`, consumed by `document-extraction` and reused by `arxiv-pdf-download`)
+- llm-analyzer — implementation complete, but wired to `infrastructure/llm/stub` only. Real provider integration (Anthropic) was explicitly deferred as a follow-up spec and has no spec yet — by design, deferred until the rest of the pipeline is done.
+- pdf-storage — tasks-approved, all tasks complete (local filesystem `pdf.Store`, consumed by `document-extraction` and `arxiv-pdf-download`)
+- arxiv-pdf-download — implementation complete, merged PR #6 (2026-05-11). Downloads each fetched entry's PDF into `pdf.Store` fire-and-forget after `/api/arxiv/fetch` persists it, with SSE (`GET /api/arxiv/downloads/:job_id/stream`) and REST (`GET /api/arxiv/downloads/:job_id`) status. Reused `pdf.Store` unchanged; no persistence of `download_status` to the DB (in-memory job registry).
 
 ## Known Gaps
 
-- The product pipeline (fetch → dedupe → triage → extract → LLM → persist, per [product.md](./product.md)) is not yet connected end-to-end. Each stage is a standalone endpoint requiring the operator to hand-carry IDs/paths between them (`pdf_path` into `document-extraction`, `extraction_id` into `POST /analyses`). `arxiv-pdf-download` closes the first gap; extraction→analysis handoff and a triage stage remain unspecced.
+- The product pipeline (fetch → dedupe → triage → extract → LLM → persist, per [product.md](./product.md)) is still not connected end-to-end even after `arxiv-pdf-download`. Fetch now auto-downloads PDFs, but `document-extraction` still requires the operator to hand-supply the resulting `pdf_path`, and `POST /analyses` still requires a hand-carried `extraction_id`. No spec exists yet for either handoff, or for a triage stage.
 - RSS ingestion is called out as the v1 concrete ingestion source in `product.md` but has no spec; only `domain/source` + `feedutil` scaffolding exists.
 - Real LLM provider integration is deliberately last in sequence, not forgotten — see `llm-analyzer` note above.
+- **Process note**: local `main` was 36 commits behind `origin/main` as of 2026-08-10 (missing the entire `arxiv-pdf-download` merge) until this session force-synced it. Verify `git status` vs `origin/main` before trusting this file's "Completed" section in future sessions — this roadmap is hand-maintained and both this repo's remote and local copies have gone stale before.
