@@ -128,7 +128,7 @@
   - _Requirements: 1.1, 3.1, 4.1_
   - _Boundary: bootstrap/app_
 
-- [ ] 4.3 Extend integration test harness with login-based authentication helpers
+- [x] 4.3 Extend integration test harness with login-based authentication helpers
   - Update `tests/integration/setup/setup.go`: add `SeedTestUser(t, env)` inserting a deterministic test user via `userpersist.NewRepository(env.DB).Save`. Add `LoginAsTestUser(t, env) string` POSTing to `/auth/login` and returning the access token. Add `AuthorizedRequest(t, env, method, path, body) *http.Request` that lazily calls `LoginAsTestUser` on first use and attaches `Authorization: Bearer <token>`, caching the token on `*TestEnv`.
   - **This task does not modify existing `_test.go` files and does not remove the `TestToken` constant.** Task 4.4 does both atomically.
   - **Observable**: a throwaway test using `setup.AuthorizedRequest(t, env, "GET", "/api/sources", nil)` against the 4.2-wired app returns 200.

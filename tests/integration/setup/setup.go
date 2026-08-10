@@ -3,13 +3,19 @@
 package setup
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
@@ -23,6 +29,8 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	domain "github.com/yoavweber/research-monitor/backend/internal/domain/source"
+	userdomain "github.com/yoavweber/research-monitor/backend/internal/domain/user"
+	authinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/auth"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	llmstub "github.com/yoavweber/research-monitor/backend/internal/infrastructure/llm/stub"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/observability"
@@ -32,6 +40,7 @@ import (
 	extractionrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
 	sourcerepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/source"
+	userpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/user"
 	"github.com/yoavweber/research-monitor/backend/internal/http/common"
 	"github.com/yoavweber/research-monitor/backend/internal/http/controller"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
@@ -41,6 +50,18 @@ import (
 )
 
 const TestToken = "test-token"
+
+// testBcryptCost keeps SeedTestUser fast — production uses cost 12, but
+// every integration test that logs in would otherwise pay that cost on
+// every run. Mirrors the cost used by bcrypt_hasher_test.go.
+const testBcryptCost = 4
+
+// TestUserEmail and TestUserPassword are the deterministic credentials
+// SeedTestUser provisions and LoginAsTestUser authenticates with.
+const (
+	TestUserEmail    = "integration-test@example.com"
+	TestUserPassword = "integration-test-password-1"
+)
 
 // TestEnvOpts lets integration tests inject replacements for collaborators
 // that the harness would otherwise omit. Zero value is valid: callers pass
@@ -109,6 +130,12 @@ type TestEnvOpts struct {
 	// PDFDownloadSubscriberBuf overrides the per-subscriber channel
 	// capacity. Zero defaults to 32 to mirror bootstrap.
 	PDFDownloadSubscriberBuf int
+
+	// AuthJWTTTL overrides the harness's JWT lifetime. Zero defaults to 24h
+	// to mirror bootstrap. Tests that need an already-expired token instead
+	// advance TestEnv.AuthClock past whatever TTL is in effect, so this
+	// exists for completeness rather than being the primary expiry lever.
+	AuthJWTTTL time.Duration
 }
 
 type TestEnv struct {
@@ -155,6 +182,16 @@ type TestEnv struct {
 	// and explicitly delete downloaded artifacts under the canonical
 	// `<root>/<source>/<key>.pdf` layout.
 	PDFStoreRoot string
+
+	// AuthClock is the movable clock backing the harness's JWT signer and
+	// validator. Tests exercising expiry (task 5.2) advance it past a
+	// token's exp claim to simulate the passage of time deterministically.
+	AuthClock *mocks.MovableClock
+
+	// authToken caches the token obtained by the first AuthorizedRequest
+	// call in a test, so repeated calls don't re-login. Set via
+	// LoginAsTestUser; access only through AuthorizedRequest.
+	authToken string
 
 	Close func()
 }
@@ -203,6 +240,24 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 	engine := gin.New()
 	engine.Use(middleware.RequestID(), middleware.Logger(logger), middleware.Recovery(logger), middleware.ErrorEnvelope())
 	api := engine.Group("/api", middleware.APIToken(TestToken))
+	rootGroup := engine.Group("/")
+
+	// Auth is wired unconditionally (not opt-in) so SeedTestUser,
+	// LoginAsTestUser, and AuthorizedRequest work in every test without each
+	// call site remembering to ask for it. The clock is a MovableClock (not
+	// SystemClock) so task 5.2's expired-token scenario can advance time
+	// deterministically instead of sleeping past a real TTL.
+	authClock := mocks.NewMovableClock(time.Now())
+	jwtTTL := o.AuthJWTTTL
+	if jwtTTL == 0 {
+		jwtTTL = 24 * time.Hour
+	}
+	jwtService := authinfra.NewJWTTokenService(authinfra.JWTConfig{
+		Secret: []byte(testJWTSecret),
+		TTL:    jwtTTL,
+		Clock:  authClock,
+	})
+	hasher := authinfra.NewBcryptHasher(testBcryptCost)
 
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(200, common.Data(gin.H{"status": "ok"}))
@@ -275,10 +330,15 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 	// instance backs the catalogue read endpoints and the arxiv fetch+persist
 	// orchestrator — exactly the production wiring shape from bootstrap.
 	deps := route.Deps{
-		Group:  api,
-		DB:     db,
-		Logger: logger,
-		Clock:  clock,
+		Group:     api,
+		RootGroup: rootGroup,
+		DB:        db,
+		Logger:    logger,
+		Clock:     clock,
+		Hasher:    hasher,
+		Signer:    jwtService,
+		Validator: jwtService,
+		JWTTTL:    jwtTTL,
 		Arxiv: route.ArxivConfig{
 			Fetcher:   o.ArxivFetcher,
 			Query:     o.ArxivQuery,
@@ -288,6 +348,7 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		Download: route.DownloadConfig{Reader: downloadReader},
 	}
 
+	route.AuthRouter(deps)
 	route.PaperRouter(deps)
 	if o.ArxivFetcher != nil {
 		route.ArxivRouter(deps)
@@ -418,6 +479,111 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		DB:                  db,
 		PDFDownloadRegistry: pdfDownloadRegistry,
 		PDFStoreRoot:        pdfStoreRoot,
+		AuthClock:           authClock,
 		Close:               closeFn,
 	}
+}
+
+// testJWTSecret is a fixed, non-secret signing key used only by the
+// integration-test harness. It satisfies the ≥32-byte minimum bootstrap
+// enforces on AUTH_JWT_SECRET in production.
+const testJWTSecret = "integration-test-harness-signing-key-not-secret"
+
+// SeedTestUser inserts the deterministic test user directly through the
+// user repository, bypassing HTTP, for tests that only need a valid
+// principal to exist and don't care about the login round trip. Idempotent:
+// a second call in the same test env is a no-op rather than a failure, so
+// callers (including LoginAsTestUser) don't need to track whether seeding
+// already happened.
+func SeedTestUser(t *testing.T, env *TestEnv) {
+	t.Helper()
+
+	hash, err := authinfra.NewBcryptHasher(testBcryptCost).Hash(TestUserPassword)
+	if err != nil {
+		t.Fatalf("hash test user password: %v", err)
+	}
+
+	repo := userpersist.NewRepository(env.DB)
+	now := time.Now().UTC()
+	u := &userdomain.User{
+		ID:           uuid.New(),
+		Email:        TestUserEmail,
+		PasswordHash: hash,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	err = repo.Save(context.Background(), u)
+	if err == nil || errors.Is(err, userdomain.ErrEmailExists) {
+		return
+	}
+	t.Fatalf("seed test user: %v", err)
+}
+
+// LoginAsTestUser seeds the deterministic test user (idempotent) and logs in
+// through the real POST /auth/login endpoint, returning the issued access
+// token. Exercising the real endpoint — rather than minting a token directly
+// — means tests get the same signature/claims path production traffic does.
+func LoginAsTestUser(t *testing.T, env *TestEnv) string {
+	t.Helper()
+
+	SeedTestUser(t, env)
+
+	body, err := json.Marshal(userdomain.LoginRequest{
+		Email:    TestUserEmail,
+		Password: TestUserPassword,
+	})
+	if err != nil {
+		t.Fatalf("marshal login request: %v", err)
+	}
+
+	resp, err := http.Post(env.Server.URL+"/auth/login", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("login request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login: status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var envelope struct {
+		Data userdomain.LoginResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	return envelope.Data.AccessToken
+}
+
+// AuthorizedRequest builds an *http.Request against the test server carrying
+// a valid bearer token, logging in on first use and caching the token on
+// env for the rest of the test. body, when non-nil, is JSON-encoded and set
+// as the request body with a matching Content-Type.
+func AuthorizedRequest(t *testing.T, env *TestEnv, method, path string, body any) *http.Request {
+	t.Helper()
+
+	if env.authToken == "" {
+		env.authToken = LoginAsTestUser(t, env)
+	}
+
+	var reader *bytes.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+		reader = bytes.NewReader(encoded)
+	} else {
+		reader = bytes.NewReader(nil)
+	}
+
+	req, err := http.NewRequest(method, env.Server.URL+path, reader)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", env.authToken))
+	return req
 }
