@@ -32,6 +32,16 @@ type Env struct {
 	MineruTimeout          time.Duration `mapstructure:"-"`
 	PDFStoreRoot           string        `mapstructure:"PDF_STORE_ROOT"`
 
+	// PDF-download orchestration. Retention is the wall-clock window that
+	// completed download jobs remain readable via the status / SSE
+	// endpoints before the registry evicts them. SubscriberBuffer is the
+	// per-subscriber channel capacity used by the registry's non-blocking
+	// fan-out; an SSE client that fails to drain past this depth is
+	// dropped rather than blocking the worker.
+	PDFDownloadRetentionRaw  string        `mapstructure:"PDF_DOWNLOAD_RETENTION"`
+	PDFDownloadRetention     time.Duration `mapstructure:"-"`
+	PDFDownloadSubscriberBuf int           `mapstructure:"PDF_DOWNLOAD_SUBSCRIBER_BUFFER"`
+
 	// "anthropic" is reserved but rejected at startup until that adapter
 	// ships, so analyzer requests can never silently no-op.
 	LLMProvider string `mapstructure:"LLM_PROVIDER"`
@@ -57,6 +67,8 @@ func LoadEnv() (*Env, error) {
 	v.SetDefault("MINERU_PATH", "mineru")
 	v.SetDefault("MINERU_TIMEOUT", "10m")
 	v.SetDefault("PDF_STORE_ROOT", "data/pdfs")
+	v.SetDefault("PDF_DOWNLOAD_RETENTION", "5m")
+	v.SetDefault("PDF_DOWNLOAD_SUBSCRIBER_BUFFER", 32)
 	v.SetDefault("LLM_PROVIDER", "fake")
 
 	// BindEnv forces each struct-tagged key into AllSettings so Unmarshal
@@ -78,6 +90,8 @@ func LoadEnv() (*Env, error) {
 		"MINERU_PATH",
 		"MINERU_TIMEOUT",
 		"PDF_STORE_ROOT",
+		"PDF_DOWNLOAD_RETENTION",
+		"PDF_DOWNLOAD_SUBSCRIBER_BUFFER",
 		"LLM_PROVIDER",
 	} {
 		_ = v.BindEnv(key)
@@ -139,6 +153,16 @@ func LoadEnv() (*Env, error) {
 	env.MineruTimeout = mineruTimeout
 
 	if err := validatePDFStoreRoot(env.PDFStoreRoot); err != nil {
+		return nil, err
+	}
+
+	pdfDownloadRetention, err := parsePositiveDuration("PDF_DOWNLOAD_RETENTION", env.PDFDownloadRetentionRaw)
+	if err != nil {
+		return nil, err
+	}
+	env.PDFDownloadRetention = pdfDownloadRetention
+
+	if err := requirePositiveInt("PDF_DOWNLOAD_SUBSCRIBER_BUFFER", env.PDFDownloadSubscriberBuf); err != nil {
 		return nil, err
 	}
 

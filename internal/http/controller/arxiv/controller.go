@@ -48,10 +48,10 @@ func NewArxivController(uc arxivapp.UseCase, clock shared.Clock) *ArxivControlle
 // @Security     APIToken
 // @Router       /arxiv/fetch [get]
 func (ctrl *ArxivController) Fetch(c *gin.Context) {
-	results, err := ctrl.uc.Fetch(c.Request.Context())
+	result, err := ctrl.uc.Fetch(c.Request.Context())
 	if err != nil {
 		_ = c.Error(err)
 		return
 	}
-	c.JSON(http.StatusOK, common.Data(ToFetchResponse(results, ctrl.clock.Now())))
+	c.JSON(http.StatusOK, common.Data(ToFetchResponse(result, ctrl.clock.Now())))
 }

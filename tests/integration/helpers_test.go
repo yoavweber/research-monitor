@@ -4,12 +4,15 @@ package integration_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
+	"github.com/yoavweber/research-monitor/backend/tests/ssetest"
 )
 
 // doAuthenticatedGet issues a GET against the test server with the canonical
@@ -37,6 +40,19 @@ func doAuthenticatedPost(t *testing.T, url, body string) *http.Response {
 		t.Fatalf("post: %v", err)
 	}
 	return resp
+}
+
+// readUntilSummary drains body until the PDF-download terminal summary
+// frame arrives or the stream closes, then returns every frame seen in
+// order. Tests use this when they need the full event log up to and
+// including the terminal frame.
+func readUntilSummary(t *testing.T, body io.Reader) []ssetest.Frame {
+	t.Helper()
+	frames, err := ssetest.ReadUntilEvent(body, paperctrl.EventDownloadSummary)
+	if err != nil {
+		t.Fatalf("read SSE: %v", err)
+	}
+	return frames
 }
 
 // assertErrorEnvelope decodes the standard { "error": { "code": N, "message": "..." } }

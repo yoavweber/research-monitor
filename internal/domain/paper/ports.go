@@ -38,3 +38,4 @@ type Repository interface {
 	// paper.ErrCatalogueUnavailable.
 	List(ctx context.Context) ([]Entry, error)
 }
+

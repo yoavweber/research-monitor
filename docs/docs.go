@@ -140,6 +140,98 @@ const docTemplate = `{
                 }
             }
         },
+        "/arxiv/downloads/{job_id}": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "description": "Returns a snapshot of a PDF-download job scheduled by\n/api/arxiv/fetch, including per-entry results and totals.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "PDFDownload"
+                ],
+                "summary": "Get the status of a PDF-download job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Download job id (UUIDv4)",
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Job status snapshot",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller_paper.JobStatusEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Job unknown or expired",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/arxiv/downloads/{job_id}/stream": {
+            "get": {
+                "security": [
+                    {
+                        "APIToken": []
+                    }
+                ],
+                "description": "Opens a Server-Sent Events stream for a PDF-download\njob: replays buffered events first, then forwards live\nprogress events and a terminal summary frame.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "PDFDownload"
+                ],
+                "summary": "Stream PDF-download events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Download job id (UUIDv4)",
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream of download.progress events followed by a terminal download.summary",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid API token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Job unknown or expired",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/arxiv/fetch": {
             "get": {
                 "security": [
@@ -712,6 +804,72 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadEntryResultDTO": {
+            "type": "object",
+            "properties": {
+                "bytes": {
+                    "type": "integer"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "paper_id": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.PaperIDDTO"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadJobSnapshotDTO": {
+            "type": "object",
+            "properties": {
+                "completed": {
+                    "type": "boolean"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadEntryResultDTO"
+                    }
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.PaperIDDTO": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_http_controller.SourceEnvelope": {
             "type": "object",
             "properties": {
@@ -854,6 +1012,9 @@ const docTemplate = `{
                 },
                 "fetched_at": {
                     "type": "string"
+                },
+                "job": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_controller_paper.DownloadJobSnapshotDTO"
                 }
             }
         },
@@ -929,11 +1090,85 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_http_controller_paper.DownloadEntryResultDTO": {
+            "type": "object",
+            "properties": {
+                "bytes": {
+                    "type": "integer"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "paper_id": {
+                    "$ref": "#/definitions/internal_http_controller_paper.PaperIDDTO"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_http_controller_paper.DownloadJobSnapshotDTO": {
+            "type": "object",
+            "properties": {
+                "completed": {
+                    "type": "boolean"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_http_controller_paper.DownloadEntryResultDTO"
+                    }
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_http_controller_paper.JobStatusEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_http_controller_paper.DownloadJobSnapshotDTO"
+                }
+            }
+        },
         "internal_http_controller_paper.PaperEnvelope": {
             "type": "object",
             "properties": {
                 "data": {
                     "$ref": "#/definitions/internal_http_controller_paper.PaperResponse"
+                }
+            }
+        },
+        "internal_http_controller_paper.PaperIDDTO": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string"
+                },
+                "source_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
                 }
             }
         },

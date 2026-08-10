@@ -12,6 +12,7 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
 	paperrepo "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/paper"
+	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 	"github.com/yoavweber/research-monitor/backend/tests/testdb"
 )
 
@@ -62,8 +63,9 @@ func TestArxivRouter_RegistersFetchEndpoint(t *testing.T) {
 		Logger: nopLogger{},
 		Clock:  fixedClock{t: time.Date(2025, 10, 1, 12, 0, 0, 0, time.UTC)},
 		Arxiv: ArxivConfig{
-			Fetcher: &fakePaperFetcher{entries: []paper.Entry{}},
-			Query:   paper.Query{Categories: []string{"cs.LG"}, MaxResults: 10},
+			Fetcher:   &fakePaperFetcher{entries: []paper.Entry{}},
+			Query:     paper.Query{Categories: []string{"cs.LG"}, MaxResults: 10},
+			Scheduler: mocks.NewPDFDownloadScheduler(),
 		},
 		Paper: PaperConfig{Repo: paperrepo.NewRepository(testdb.New(t))},
 	})
