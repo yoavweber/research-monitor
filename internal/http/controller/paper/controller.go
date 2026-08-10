@@ -44,7 +44,7 @@ func NewPaperController(repo paper.Repository) *PaperController {
 // @Failure      401        {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      404        {object}  common.ErrorEnvelope  "Paper not found"
 // @Failure      500        {object}  common.ErrorEnvelope  "Catalogue unavailable"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /papers/{source}/{source_id} [get]
 func (ctrl *PaperController) Get(c *gin.Context) {
 	source := c.Param("source")
@@ -69,7 +69,7 @@ func (ctrl *PaperController) Get(c *gin.Context) {
 // @Success      200  {object}  PaperListEnvelope     "Paper catalogue"
 // @Failure      401  {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      500  {object}  common.ErrorEnvelope  "Catalogue unavailable"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /papers [get]
 func (ctrl *PaperController) List(c *gin.Context) {
 	entries, err := ctrl.repo.List(c.Request.Context())

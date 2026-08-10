@@ -41,7 +41,7 @@ func NewExtractionController(uc extraction.UseCase) *ExtractionController {
 // @Failure      400   {object}  common.ErrorEnvelope           "Invalid request body"
 // @Failure      401   {object}  common.ErrorEnvelope           "Missing or invalid API token"
 // @Failure      500   {object}  common.ErrorEnvelope           "Catalogue unavailable"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /extractions [post]
 func (ctrl *ExtractionController) Submit(c *gin.Context) {
 	var body SubmitExtractionRequest
@@ -84,7 +84,7 @@ func (ctrl *ExtractionController) Submit(c *gin.Context) {
 // @Failure      401   {object}  common.ErrorEnvelope            "Missing or invalid API token"
 // @Failure      404   {object}  common.ErrorEnvelope            "Extraction not found"
 // @Failure      500   {object}  common.ErrorEnvelope            "Catalogue unavailable"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /extractions/{id} [get]
 func (ctrl *ExtractionController) Get(c *gin.Context) {
 	id := c.Param("id")

@@ -2,9 +2,10 @@
 // @version         1.0
 // @description     HTTP API for the research monitor (arXiv ingestion + paper catalogue).
 // @BasePath        /api
-// @securityDefinitions.apikey APIToken
+// @securityDefinitions.apikey BearerAuth
 // @in              header
 // @name            Authorization
+// @description     JWT issued by POST /auth/login. Supply as "Bearer &lt;token&gt;".
 package main
 
 import (

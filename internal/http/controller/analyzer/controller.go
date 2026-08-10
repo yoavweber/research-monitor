@@ -35,7 +35,7 @@ func NewController(uc domain.UseCase) *Controller {
 // @Failure      409   {object}  common.ErrorEnvelope   "Extraction not in done status"
 // @Failure      500   {object}  common.ErrorEnvelope   "Analysis storage unavailable"
 // @Failure      502   {object}  common.ErrorEnvelope   "LLM upstream failed"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /analyses [post]
 func (ctrl *Controller) Submit(c *gin.Context) {
 	var body SubmitAnalysisRequest
@@ -62,7 +62,7 @@ func (ctrl *Controller) Submit(c *gin.Context) {
 // @Failure      401            {object}  common.ErrorEnvelope   "Missing or invalid API token"
 // @Failure      404            {object}  common.ErrorEnvelope   "Analysis not found"
 // @Failure      500            {object}  common.ErrorEnvelope   "Analysis storage unavailable"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /analyses/{extraction_id} [get]
 func (ctrl *Controller) Get(c *gin.Context) {
 	id := c.Param("extraction_id")

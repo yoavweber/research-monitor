@@ -47,6 +47,44 @@ definitions:
       name:
         type: string
     type: object
+  github_com_yoavweber_research-monitor_backend_internal_domain_user.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    required:
+    - current_password
+    - new_password
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginResponse:
+    properties:
+      access_token:
+        type: string
+      expires_at:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.SessionResponse'
+    type: object
+  github_com_yoavweber_research-monitor_backend_internal_domain_user.SessionResponse:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+    type: object
   github_com_yoavweber_research-monitor_backend_internal_http_common.Error:
     properties:
       code:
@@ -104,6 +142,16 @@ definitions:
         type: string
       version:
         type: string
+    type: object
+  internal_http_controller.LoginEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginResponse'
+    type: object
+  internal_http_controller.SessionEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.SessionResponse'
     type: object
   internal_http_controller.SourceEnvelope:
     properties:
@@ -398,7 +446,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Submit an analysis
       tags:
       - Analyses
@@ -430,7 +478,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Get an analysis by extraction id
       tags:
       - Analyses
@@ -461,7 +509,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Get the status of a PDF-download job
       tags:
       - PDFDownload
@@ -494,7 +542,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Stream PDF-download events
       tags:
       - PDFDownload
@@ -528,10 +576,87 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Fetch latest arXiv entries
       tags:
       - Arxiv
+  /auth/change-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Current and new password
+        in: body
+        name: change
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Password updated
+        "400":
+          description: Validation error, incorrect current password, weak new password,
+            or unchanged password
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "401":
+          description: Missing or invalid access token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Rotate the authenticated user's password
+      tags:
+      - Auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Login credentials
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Issued access token and session
+          schema:
+            $ref: '#/definitions/internal_http_controller.LoginEnvelope'
+        "400":
+          description: Invalid JSON body or validation error
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+        "401":
+          description: Invalid credentials
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      summary: Authenticate with email and password
+      tags:
+      - Auth
+  /auth/session:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Authenticated session
+          schema:
+            $ref: '#/definitions/internal_http_controller.SessionEnvelope'
+        "401":
+          description: Missing or invalid access token
+          schema:
+            $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
+      security:
+      - BearerAuth: []
+      summary: Return the currently authenticated user
+      tags:
+      - Auth
   /extractions:
     post:
       consumes:
@@ -563,7 +688,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Submit an extraction
       tags:
       - Extractions
@@ -595,7 +720,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Get extraction status by id
       tags:
       - Extractions
@@ -617,7 +742,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: List all persisted papers
       tags:
       - Papers
@@ -654,7 +779,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Get a paper by source + source_id
       tags:
       - Papers
@@ -672,7 +797,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: List all sources
       tags:
       - Sources
@@ -706,7 +831,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Create a source
       tags:
       - Sources
@@ -730,7 +855,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Delete a source
       tags:
       - Sources
@@ -757,7 +882,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Get a source by ID
       tags:
       - Sources
@@ -796,12 +921,13 @@ paths:
           schema:
             $ref: '#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope'
       security:
-      - APIToken: []
+      - BearerAuth: []
       summary: Update a source
       tags:
       - Sources
 securityDefinitions:
-  APIToken:
+  BearerAuth:
+    description: JWT issued by POST /auth/login. Supply as "Bearer &lt;token&gt;".
     in: header
     name: Authorization
     type: apiKey

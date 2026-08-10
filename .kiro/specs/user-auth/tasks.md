@@ -154,7 +154,7 @@
   - _Boundary: http/middleware, bootstrap/env_
   - _Depends: 4.4_
 
-- [ ] 4.6 Replace `@Security APIToken` swag annotations and regenerate docs
+- [x] 4.6 Replace `@Security APIToken` swag annotations and regenerate docs
   - In every controller under `internal/http/controller/`, replace `@Security APIToken` with `@Security BearerAuth`.
   - Update the `securityDefinitions` block in the swag entrypoint to define `BearerAuth` as `apiKey, in: header, name: Authorization` (or `http, scheme: bearer` depending on the swag version in use).
   - Run `task swag`. Commit regenerated `docs/`.

@@ -39,7 +39,7 @@ func NewPDFDownloadController(reader PDFDownloadReader) *PDFDownloadController {
 // @Success      200     {object}  JobStatusEnvelope     "Job status snapshot"
 // @Failure      401     {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      404     {object}  common.ErrorEnvelope  "Job unknown or expired"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /arxiv/downloads/{job_id} [get]
 func (ctrl *PDFDownloadController) Status(c *gin.Context) {
 	id := pdfdownload.JobID(c.Param("job_id"))
@@ -73,7 +73,7 @@ func (ctrl *PDFDownloadController) Status(c *gin.Context) {
 // @Success      200     {string}  string                "SSE stream of download.progress events followed by a terminal download.summary"
 // @Failure      401     {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      404     {object}  common.ErrorEnvelope  "Job unknown or expired"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /arxiv/downloads/{job_id}/stream [get]
 func (ctrl *PDFDownloadController) Stream(c *gin.Context) {
 	id := pdfdownload.JobID(c.Param("job_id"))

@@ -27,7 +27,7 @@ func NewSourceController(uc domain.UseCase) *SourceController {
 // @Failure      400     {object}  common.ErrorEnvelope  "Invalid JSON body or validation error"
 // @Failure      401     {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      409     {object}  common.ErrorEnvelope  "Source URL already exists"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /sources [post]
 func (ctrl *SourceController) Create(c *gin.Context) {
 	var req domain.CreateRequest
@@ -50,7 +50,7 @@ func (ctrl *SourceController) Create(c *gin.Context) {
 // @Produce      json
 // @Success      200  {object}  SourceListEnvelope    "Sources"
 // @Failure      401  {object}  common.ErrorEnvelope  "Missing or invalid API token"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /sources [get]
 func (ctrl *SourceController) List(c *gin.Context) {
 	xs, err := ctrl.uc.List(c.Request.Context())
@@ -70,7 +70,7 @@ func (ctrl *SourceController) List(c *gin.Context) {
 // @Success      200  {object}  SourceEnvelope        "Source"
 // @Failure      401  {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      404  {object}  common.ErrorEnvelope  "Source not found"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /sources/{id} [get]
 func (ctrl *SourceController) Get(c *gin.Context) {
 	s, err := ctrl.uc.Get(c.Request.Context(), c.Param("id"))
@@ -93,7 +93,7 @@ func (ctrl *SourceController) Get(c *gin.Context) {
 // @Failure      400     {object}  common.ErrorEnvelope  "Invalid JSON body or validation error"
 // @Failure      401     {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      404     {object}  common.ErrorEnvelope  "Source not found"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /sources/{id} [patch]
 func (ctrl *SourceController) Update(c *gin.Context) {
 	var req domain.UpdateRequest
@@ -117,7 +117,7 @@ func (ctrl *SourceController) Update(c *gin.Context) {
 // @Success      204  "Deleted"
 // @Failure      401  {object}  common.ErrorEnvelope  "Missing or invalid API token"
 // @Failure      404  {object}  common.ErrorEnvelope  "Source not found"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /sources/{id} [delete]
 func (ctrl *SourceController) Delete(c *gin.Context) {
 	if err := ctrl.uc.Delete(c.Request.Context(), c.Param("id")); err != nil {

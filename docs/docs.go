@@ -19,7 +19,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "consumes": [
@@ -93,7 +93,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "produces": [
@@ -144,7 +144,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Returns a snapshot of a PDF-download job scheduled by\n/api/arxiv/fetch, including per-entry results and totals.",
@@ -190,7 +190,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Opens a Server-Sent Events stream for a PDF-download\njob: replays buffered events first, then forwards live\nprogress events and a terminal summary frame.",
@@ -236,7 +236,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "description": "Triggers an arXiv fetch + persist cycle. No body, no query params.\nReturns the fetched entries with per-entry is_new derived from\nwhether persistence inserted a new row for that paper.",
@@ -281,11 +281,133 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/change-password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Rotate the authenticated user's password",
+                "parameters": [
+                    {
+                        "description": "Current and new password",
+                        "name": "change",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.ChangePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Password updated"
+                    },
+                    "400": {
+                        "description": "Validation error, incorrect current password, weak new password, or unchanged password",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid access token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/login": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Authenticate with email and password",
+                "parameters": [
+                    {
+                        "description": "Login credentials",
+                        "name": "credentials",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Issued access token and session",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller.LoginEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid JSON body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/session": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Return the currently authenticated user",
+                "responses": {
+                    "200": {
+                        "description": "Authenticated session",
+                        "schema": {
+                            "$ref": "#/definitions/internal_http_controller.SessionEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid access token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_http_common.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/extractions": {
             "post": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "consumes": [
@@ -341,7 +463,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "produces": [
@@ -392,7 +514,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "produces": [
@@ -428,7 +550,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "produces": [
@@ -486,7 +608,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "produces": [
@@ -514,7 +636,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "consumes": [
@@ -570,7 +692,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "produces": [
@@ -613,7 +735,7 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "tags": [
@@ -650,7 +772,7 @@ const docTemplate = `{
             "patch": {
                 "security": [
                     {
-                        "APIToken": []
+                        "BearerAuth": []
                     }
                 ],
                 "consumes": [
@@ -781,6 +903,64 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_yoavweber_research-monitor_backend_internal_domain_user.ChangePasswordRequest": {
+            "type": "object",
+            "required": [
+                "current_password",
+                "new_password"
+            ],
+            "properties": {
+                "current_password": {
+                    "type": "string"
+                },
+                "new_password": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.SessionResponse"
+                }
+            }
+        },
+        "github_com_yoavweber_research-monitor_backend_internal_domain_user.SessionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_yoavweber_research-monitor_backend_internal_http_common.Error": {
             "type": "object",
             "properties": {
@@ -867,6 +1047,22 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_http_controller.LoginEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.LoginResponse"
+                }
+            }
+        },
+        "internal_http_controller.SessionEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/github_com_yoavweber_research-monitor_backend_internal_domain_user.SessionResponse"
                 }
             }
         },
@@ -1243,7 +1439,8 @@ const docTemplate = `{
         }
     },
     "securityDefinitions": {
-        "APIToken": {
+        "BearerAuth": {
+            "description": "JWT issued by POST /auth/login. Supply as \"Bearer \u0026lt;token\u0026gt;\".",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

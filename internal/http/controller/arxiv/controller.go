@@ -45,7 +45,7 @@ func NewArxivController(uc arxivapp.UseCase, clock shared.Clock) *ArxivControlle
 // @Failure      500  {object}  common.ErrorEnvelope  "Catalogue unavailable"
 // @Failure      502  {object}  common.ErrorEnvelope  "Upstream arXiv returned a non-success or malformed response"
 // @Failure      504  {object}  common.ErrorEnvelope  "Upstream arXiv unavailable"
-// @Security     APIToken
+// @Security     BearerAuth
 // @Router       /arxiv/fetch [get]
 func (ctrl *ArxivController) Fetch(c *gin.Context) {
 	result, err := ctrl.uc.Fetch(c.Request.Context())
