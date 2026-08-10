@@ -12,7 +12,6 @@ import (
 type Env struct {
 	AppEnv             string   `mapstructure:"APP_ENV"`
 	HTTPPort           int      `mapstructure:"HTTP_PORT"`
-	APIToken           string   `mapstructure:"API_TOKEN"`
 	SQLitePath         string   `mapstructure:"SQLITE_PATH"`
 	AnthropicAPIKey    string   `mapstructure:"ANTHROPIC_API_KEY"`
 	AnthropicModel     string   `mapstructure:"ANTHROPIC_MODEL"`
@@ -86,7 +85,6 @@ func LoadEnv() (*Env, error) {
 	for _, key := range []string{
 		"APP_ENV",
 		"HTTP_PORT",
-		"API_TOKEN",
 		"SQLITE_PATH",
 		"ANTHROPIC_API_KEY",
 		"ANTHROPIC_MODEL",
@@ -113,9 +111,6 @@ func LoadEnv() (*Env, error) {
 		return nil, fmt.Errorf("unmarshal env: %w", err)
 	}
 
-	if env.APIToken == "" {
-		return nil, fmt.Errorf("API_TOKEN is required")
-	}
 	if env.SQLitePath == "" {
 		return nil, fmt.Errorf("SQLITE_PATH is required")
 	}

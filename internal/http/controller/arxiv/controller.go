@@ -29,7 +29,7 @@ func NewArxivController(uc arxivapp.UseCase, clock shared.Clock) *ArxivControlle
 // Fetch godoc
 //
 // Fetch handles GET /api/arxiv/fetch. It takes no body and no query params;
-// auth is enforced at the /api group level by the pre-existing APIToken
+// auth is enforced at the /api group level by the JWTAuth
 // middleware. On use-case error we hand off to c.Error — the ErrorEnvelope
 // middleware translates *shared.HTTPError sentinels (paper.ErrUpstream*,
 // paper.ErrCatalogueUnavailable) into the final status and envelope.

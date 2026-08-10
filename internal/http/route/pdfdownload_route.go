@@ -7,7 +7,7 @@ import (
 // PDFDownloadRouter wires the per-job read endpoints for PDF download
 // jobs scheduled by /api/arxiv/fetch. The endpoints sit under
 // /api/arxiv/downloads/:job_id so they inherit the /api group's
-// APIToken middleware. The Reader port is shared with the arxiv use
+// JWTAuth middleware. The Reader port is shared with the arxiv use
 // case's PDFScheduler via the same in-memory registry instance, which
 // bootstrap constructs once.
 func PDFDownloadRouter(d Deps) {

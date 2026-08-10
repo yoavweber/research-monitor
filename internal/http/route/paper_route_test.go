@@ -18,7 +18,7 @@ import (
 // modulo auth: the ErrorEnvelope middleware is mounted so the sentinel
 // translation (paper.ErrNotFound → 404) materialises in w.Code, which is
 // what the smoke tests assert. Auth is intentionally absent — these tests
-// exercise route wiring, not the APIToken middleware.
+// exercise route wiring, not the JWTAuth middleware.
 func newPaperEngine(repo paper.Repository) *gin.Engine {
 	engine := gin.New()
 	engine.Use(middleware.ErrorEnvelope())

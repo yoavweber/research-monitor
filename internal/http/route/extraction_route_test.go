@@ -5,10 +5,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	authinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/auth"
+
 	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/http/route"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
@@ -18,18 +23,49 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-const testAPIToken = "test-token"
+// testJWTSecret is a fixed, non-secret signing key shared by every JWTAuth
+// guard built in this package's route tests — they only need internal
+// consistency between the middleware and the token they issue, not a
+// realistic secret.
+const testJWTSecret = "route-test-harness-signing-key-not-secret-pad"
+
+// newTestJWTAuth builds a JWTTokenService satisfying both shared.TokenSigner
+// (to mint a request's bearer token) and shared.TokenValidator (to wire the
+// middleware), so the two always agree on the same key.
+func newTestJWTAuth() *authinfra.JWTTokenService {
+	return authinfra.NewJWTTokenService(authinfra.JWTConfig{
+		Secret: []byte(testJWTSecret),
+		TTL:    time.Hour,
+		Clock:  shared.SystemClock{},
+	})
+}
+
+// mustIssueTestToken mints a bearer token off svc. Issue only fails on an
+// empty subject, which never happens here, but the error is still surfaced
+// via t.Fatalf rather than ignored.
+func mustIssueTestToken(t *testing.T, svc *authinfra.JWTTokenService) string {
+	t.Helper()
+	token, _, err := svc.Issue(uuid.NewString())
+	if err != nil {
+		t.Fatalf("issue test token: %v", err)
+	}
+	return token
+}
 
 // newExtractionEngine assembles a minimal /api group with the production
-// APIToken middleware mounted, then calls ExtractionRouter to register the
-// extraction handlers. The fake use case records calls so the test can
-// assert reachability through the auth chain without spinning up the full
-// bootstrap composition (Task 4 owns that).
-func newExtractionEngine(uc extraction.UseCase) *gin.Engine {
+// JWTAuth middleware mounted, then calls ExtractionRouter to register the
+// extraction handlers. Returns the engine and a bearer token valid against
+// it. The fake use case records calls so the test can assert reachability
+// through the auth chain without spinning up the full bootstrap composition
+// (Task 4 owns that).
+func newExtractionEngine(t *testing.T, uc extraction.UseCase) (*gin.Engine, string) {
+	svc := newTestJWTAuth()
+	token := mustIssueTestToken(t, svc)
+
 	engine := gin.New()
 	engine.Use(middleware.ErrorEnvelope())
 	group := engine.Group("/api")
-	group.Use(middleware.APIToken(testAPIToken))
+	group.Use(middleware.JWTAuth(svc))
 
 	route.ExtractionRouter(route.Deps{
 		Group: group,
@@ -37,13 +73,13 @@ func newExtractionEngine(uc extraction.UseCase) *gin.Engine {
 			UseCase: uc,
 		},
 	})
-	return engine
+	return engine, token
 }
 
 // TestExtractionRouter_RegistersEndpoints verifies that both extraction
 // endpoints are wired onto the /api group. We probe each path with a valid
-// API token and assert the response is NOT 404 (i.e. the router matched the
-// path); the precise status code depends on the fake use case, which is
+// bearer token and assert the response is NOT 404 (i.e. the router matched
+// the path); the precise status code depends on the fake use case, which is
 // covered by the controller-level tests in Task 3.5.
 // Requirements 1.4, 2.6 (404 absence proves route registration).
 func TestExtractionRouter_RegistersEndpoints(t *testing.T) {
@@ -61,7 +97,7 @@ func TestExtractionRouter_RegistersEndpoints(t *testing.T) {
 			},
 		},
 	}
-	engine := newExtractionEngine(uc)
+	engine, token := newExtractionEngine(t, uc)
 
 	cases := []struct {
 		name   string
@@ -85,7 +121,7 @@ func TestExtractionRouter_RegistersEndpoints(t *testing.T) {
 				body = bytes.NewBuffer(nil)
 			}
 			req := httptest.NewRequest(tc.method, tc.path, body)
-			req.Header.Set(middleware.APITokenHeader, testAPIToken)
+			req.Header.Set("Authorization", "Bearer "+token)
 			if tc.body != nil {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -100,13 +136,13 @@ func TestExtractionRouter_RegistersEndpoints(t *testing.T) {
 }
 
 // TestExtractionRouter_RejectsMissingToken verifies the new endpoints
-// inherit the APIToken middleware mounted on the /api group: a request
-// without X-API-Token returns 401 from both POST /api/extractions and
-// GET /api/extractions/:id. Requirements 1.4, 2.6.
+// inherit the JWTAuth middleware mounted on the /api group: a request
+// without an Authorization header returns 401 from both POST
+// /api/extractions and GET /api/extractions/:id. Requirements 1.4, 2.6.
 func TestExtractionRouter_RejectsMissingToken(t *testing.T) {
 	t.Parallel()
 
-	engine := newExtractionEngine(&mocks.ExtractionUseCaseFake{})
+	engine, _ := newExtractionEngine(t, &mocks.ExtractionUseCaseFake{})
 
 	cases := []struct {
 		name   string
@@ -145,7 +181,7 @@ func TestExtractionRouter_RejectsMissingToken(t *testing.T) {
 }
 
 // TestExtractionRouter_PostReachesController verifies an authenticated POST
-// passes through APIToken and lands on Submit. The fake records the
+// passes through JWTAuth and lands on Submit. The fake records the
 // translated RequestPayload, proving the controller was invoked. Confirms
 // the route is wired through the auth middleware end-to-end; exhaustive
 // controller behavior is asserted in Task 3.5.
@@ -155,12 +191,12 @@ func TestExtractionRouter_PostReachesController(t *testing.T) {
 	uc := &mocks.ExtractionUseCaseFake{
 		SubmitResult: extraction.SubmitResult{ID: "ext-1", Status: extraction.JobStatusPending},
 	}
-	engine := newExtractionEngine(uc)
+	engine, token := newExtractionEngine(t, uc)
 
 	body := bytes.NewBufferString(`{"source_type":"paper","source_id":"2501.00001","pdf_path":"/tmp/x.pdf"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/extractions", body)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.APITokenHeader, testAPIToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 

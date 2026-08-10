@@ -256,7 +256,6 @@ func TestNewApp_ExtractionStartupRecovery(t *testing.T) {
 	env := &Env{
 		AppEnv:                 "test",
 		HTTPPort:               0,
-		APIToken:               "test-token",
 		SQLitePath:             dbPath,
 		ArxivBaseURL:           "http://localhost",
 		ArxivCategories:        []string{"q-fin.MF"},
@@ -372,7 +371,6 @@ func TestNewApp_WiresPDFStore(t *testing.T) {
 		env := &Env{
 			AppEnv:                 "test",
 			HTTPPort:               0,
-			APIToken:               "test-token",
 			SQLitePath:             filepath.Join(tmpDir, "test.db"),
 			ArxivBaseURL:           "http://localhost",
 			ArxivCategories:        []string{"q-fin.MF"},

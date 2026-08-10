@@ -71,7 +71,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	)
 
 	// Swagger UI is mounted outside the /api group so it is not gated by the
-	// APIToken middleware, and only in non-prod environments — production must
+	// JWTAuth middleware, and only in non-prod environments — production must
 	// not expose the schema or the UI.
 	if env.AppEnv != "prod" {
 		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

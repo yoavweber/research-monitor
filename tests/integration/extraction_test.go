@@ -108,8 +108,8 @@ func pollUntilStatus(t *testing.T, env *setup.TestEnv, id string, timeout time.D
 
 // security
 // TestExtraction_401_MissingToken covers Requirement 1.4 (auth on Submit) and
-// Requirement 2.6 (auth on Get): the APIToken middleware MUST short-circuit
-// before either handler runs when X-API-Token is absent.
+// Requirement 2.6 (auth on Get): the JWTAuth middleware MUST short-circuit
+// before either handler runs when the Authorization header is absent.
 func TestExtraction_401_MissingToken(t *testing.T) {
 	t.Parallel()
 

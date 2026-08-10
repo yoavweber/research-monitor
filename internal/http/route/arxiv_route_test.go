@@ -51,7 +51,7 @@ func (c fixedClock) Now() time.Time { return c.t }
 // controller (which calls the use case, which calls the fake fetcher).
 // Requirement 1.1: authenticated client gets 200 with entries.
 // Auth (requirement 1.2) is provided by the /api group's middleware; we do
-// not mount APIToken here since this test exercises route wiring only.
+// not mount JWTAuth here since this test exercises route wiring only.
 func TestArxivRouter_RegistersFetchEndpoint(t *testing.T) {
 	t.Parallel()
 

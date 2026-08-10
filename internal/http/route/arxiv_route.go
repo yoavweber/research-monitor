@@ -10,7 +10,7 @@ import (
 // paper.Repository (sourced from PaperConfig so the same persisted catalogue
 // backs the fetch+persist orchestrator and the read endpoints), plus the
 // shared Logger and Clock. Auth for this endpoint is supplied by the
-// APIToken middleware already mounted on the /api group (requirement 1.2).
+// JWTAuth middleware already mounted on the /api group (requirement 1.2).
 func ArxivRouter(d Deps) {
 	uc := arxivapp.NewArxivUseCase(d.Arxiv.Fetcher, d.Paper.Repo, d.Logger, d.Arxiv.Query, d.Arxiv.Scheduler)
 	ctrl := arxivctrl.NewArxivController(uc, d.Clock)

@@ -13,12 +13,11 @@ import (
 // testing package refuses to combine with t.Parallel (env is process-global).
 // They therefore run serially within this file; other packages still parallelise.
 
-// setRequiredEnv wires the pre-existing required env vars (API_TOKEN, SQLITE_PATH)
-// so tests can focus on the arxiv-specific fields. Each caller must still set the
-// ARXIV_* values it wants to exercise.
+// setRequiredEnv wires the pre-existing required env vars (SQLITE_PATH,
+// AUTH_JWT_SECRET) so tests can focus on the arxiv-specific fields. Each
+// caller must still set the ARXIV_* values it wants to exercise.
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("API_TOKEN", "test-token")
 	t.Setenv("SQLITE_PATH", "./data/test.db")
 	// Provide a baseline arxiv config so tests that target the new
 	// extraction block don't trip the unrelated arxiv validators first.

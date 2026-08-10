@@ -34,23 +34,26 @@ func (s *stubUseCase) Get(_ context.Context, id string) (*domain.Analysis, error
 	return &domain.Analysis{ExtractionID: id, CreatedAt: now, UpdatedAt: now}, nil
 }
 
-func newAnalyzerEngine(uc domain.UseCase) *gin.Engine {
+func newAnalyzerEngine(t *testing.T, uc domain.UseCase) (*gin.Engine, string) {
+	svc := newTestJWTAuth()
+	token := mustIssueTestToken(t, svc)
+
 	engine := gin.New()
 	engine.Use(middleware.ErrorEnvelope())
 	group := engine.Group("/api")
-	group.Use(middleware.APIToken(testAPIToken))
+	group.Use(middleware.JWTAuth(svc))
 
 	route.AnalyzerRouter(route.Deps{
 		Group:    group,
 		Analyzer: route.AnalyzerConfig{UseCase: uc},
 	})
-	return engine
+	return engine, token
 }
 
 func TestAnalyzerRouter_RegistersEndpoints(t *testing.T) {
 	t.Parallel()
 
-	engine := newAnalyzerEngine(&stubUseCase{})
+	engine, token := newAnalyzerEngine(t, &stubUseCase{})
 
 	cases := []struct {
 		name   string
@@ -72,7 +75,7 @@ func TestAnalyzerRouter_RegistersEndpoints(t *testing.T) {
 				body = bytes.NewBuffer(tc.body)
 			}
 			req := httptest.NewRequest(tc.method, tc.path, body)
-			req.Header.Set(middleware.APITokenHeader, testAPIToken)
+			req.Header.Set("Authorization", "Bearer "+token)
 			if tc.body != nil {
 				req.Header.Set("Content-Type", "application/json")
 			}
@@ -90,7 +93,7 @@ func TestAnalyzerRouter_RegistersEndpoints(t *testing.T) {
 func TestAnalyzerRouter_RejectsMissingToken(t *testing.T) {
 	t.Parallel()
 
-	engine := newAnalyzerEngine(&stubUseCase{})
+	engine, _ := newAnalyzerEngine(t, &stubUseCase{})
 
 	cases := []struct {
 		name   string
@@ -130,12 +133,12 @@ func TestAnalyzerRouter_AuthenticatedPostReachesController(t *testing.T) {
 	t.Parallel()
 
 	uc := &stubUseCase{}
-	engine := newAnalyzerEngine(uc)
+	engine, token := newAnalyzerEngine(t, uc)
 
 	body := bytes.NewBufferString(`{"extraction_id":"ex-1"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/analyses", body)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.APITokenHeader, testAPIToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
