@@ -163,7 +163,7 @@
   - _Boundary: http/controller, docs_
   - _Depends: 4.5_
 
-- [ ] 4.7 Update product steering to describe the new auth model
+- [x] 4.7 Update product steering to describe the new auth model
   - Replace the "Auth" line in [.kiro/steering/product.md](../../steering/product.md) with a one-line description of the new JWT model — e.g., "Email + password login (`POST /auth/login`); 24h JWT in `Authorization: Bearer`; seeded via `cmd/seed users <email> <password>`."
   - **Observable**: `rg 'X-API-Token' .kiro/steering/` returns no matches.
   - _Requirements: 6.4_

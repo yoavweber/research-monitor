@@ -19,7 +19,7 @@ fetch → dedupe → triage (news | governance | paper) → extract body (HTML /
 
 ## Auth
 
-Single static API token, header `X-API-Token`.
+Email + password login (`POST /auth/login`); 24h JWT in `Authorization: Bearer`; seeded via `cmd/seed users <email> <password>`. No refresh tokens, no logout endpoint — re-login on expiry. No roles; any seeded user has equal access.
 
 ## Deferred
 

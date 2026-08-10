@@ -74,7 +74,7 @@ Every HTTP handler must carry a swag annotation block. Required tags:
 is consumed), `@Param` for every path/query/body input, `@Success` with a
 typed envelope wrapper (e.g. `PaperListEnvelope`), one `@Failure` per
 distinct status the handler can surface (always `{object} common.ErrorEnvelope`),
-`@Security APIToken` if the route is under the authenticated `/api` group,
+`@Security BearerAuth` if the route is under the authenticated `/api` group,
 and `@Router`. Run `task swag` before commit when annotations change; the
 generated `docs/` is committed.
 
