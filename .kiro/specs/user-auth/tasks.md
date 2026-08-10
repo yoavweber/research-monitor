@@ -196,7 +196,7 @@
   - _Boundary: tests/integration/auth_api_guard_test.go_
   - _Depends: 4.4_
 
-- [ ] 5.3 (P) Integration tests for `/auth/session` and `/auth/change-password`
+- [x] 5.3 (P) Integration tests for `/auth/session` and `/auth/change-password`
   - Create `tests/integration/auth_session_change_test.go`. Reuse `setup.LoginAsTestUser`.
   - Session subtests:
     - `GET /auth/session with a valid bearer returns id, email, and created_at`
