@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 )
 
@@ -59,8 +58,8 @@ type paperWire struct {
 
 // security
 // TestPapers_401 covers R2.1 (auth on Get) and R3.1 (auth on List): the
-// APIToken middleware MUST short-circuit before the repo is touched whether
-// the token is missing or wrong.
+// JWT auth middleware MUST short-circuit before the repo is touched whether
+// the bearer token is missing or invalid.
 func TestPapers_401(t *testing.T) {
 	t.Parallel()
 	env := setup.SetupTestEnv(t)
@@ -69,7 +68,7 @@ func TestPapers_401(t *testing.T) {
 	cases := []struct {
 		name  string
 		path  string
-		token string // empty = no header
+		token string // empty = no Authorization header
 	}{
 		{"Get_MissingToken", "/api/papers/arxiv/2404.12345", ""},
 		{"Get_InvalidToken", "/api/papers/arxiv/2404.12345", "wrong-token"},
@@ -82,7 +81,7 @@ func TestPapers_401(t *testing.T) {
 			t.Parallel()
 			req, _ := http.NewRequest(http.MethodGet, env.Server.URL+tc.path, nil)
 			if tc.token != "" {
-				req.Header.Set(middleware.APITokenHeader, tc.token)
+				req.Header.Set("Authorization", "Bearer "+tc.token)
 			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
@@ -104,7 +103,7 @@ func TestPapers_Get_404(t *testing.T) {
 	env := setup.SetupTestEnv(t)
 	defer env.Close()
 
-	resp := doAuthenticatedGet(t, env.Server.URL+"/api/papers/arxiv/nonexistent")
+	resp := doAuthenticatedGet(t, env, "/api/papers/arxiv/nonexistent")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusNotFound {
@@ -122,7 +121,7 @@ func TestPapers_List_Empty(t *testing.T) {
 	env := setup.SetupTestEnv(t)
 	defer env.Close()
 
-	resp := doAuthenticatedGet(t, env.Server.URL+"/api/papers")
+	resp := doAuthenticatedGet(t, env, "/api/papers")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -160,7 +159,7 @@ func TestPapers_Get_AllFields(t *testing.T) {
 		t.Fatalf("seed save: %v", err)
 	}
 
-	resp := doAuthenticatedGet(t, env.Server.URL+"/api/papers/arxiv/2404.12345")
+	resp := doAuthenticatedGet(t, env, "/api/papers/arxiv/2404.12345")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -228,7 +227,7 @@ func TestPapers_List_AfterSeed(t *testing.T) {
 		t.Fatalf("seed save: %v", err)
 	}
 
-	resp := doAuthenticatedGet(t, env.Server.URL+"/api/papers")
+	resp := doAuthenticatedGet(t, env, "/api/papers")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -276,7 +275,7 @@ func TestPapers_List_OrderedNewestFirst(t *testing.T) {
 		t.Fatalf("seed newer: %v", err)
 	}
 
-	resp := doAuthenticatedGet(t, env.Server.URL+"/api/papers")
+	resp := doAuthenticatedGet(t, env, "/api/papers")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -330,7 +329,7 @@ func TestPapers_CompositeKey_DistinctSources(t *testing.T) {
 	}
 
 	// R1.3: List exposes both rows — no collapse on shared SourceID.
-	listResp := doAuthenticatedGet(t, env.Server.URL+"/api/papers")
+	listResp := doAuthenticatedGet(t, env, "/api/papers")
 	defer listResp.Body.Close()
 	if listResp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d want 200", listResp.StatusCode)
@@ -355,8 +354,8 @@ func TestPapers_CompositeKey_DistinctSources(t *testing.T) {
 		{"arxiv", sharedID},
 		{"biorxiv", sharedID},
 	} {
-		url := env.Server.URL + "/api/papers/" + want.source + "/" + want.id
-		resp := doAuthenticatedGet(t, url)
+		path := "/api/papers/" + want.source + "/" + want.id
+		resp := doAuthenticatedGet(t, env, path)
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			t.Fatalf("get %s/%s status = %d want 200", want.source, want.id, resp.StatusCode)

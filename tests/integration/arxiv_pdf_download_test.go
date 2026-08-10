@@ -14,7 +14,6 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	arxivctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/arxiv"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 	"github.com/yoavweber/research-monitor/backend/tests/ssetest"
@@ -67,7 +66,7 @@ func runScenario(
 	t.Cleanup(env.Close)
 
 	// Trigger the fetch.
-	fetchResp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/fetch")
+	fetchResp := doAuthenticatedGet(t, env, "/api/arxiv/fetch")
 	defer fetchResp.Body.Close()
 	if fetchResp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/arxiv/fetch status = %d want 200", fetchResp.StatusCode)
@@ -86,9 +85,7 @@ func runScenario(
 	// instead of stalling the runner.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	streamReq, _ := http.NewRequestWithContext(ctx,
-		http.MethodGet, env.Server.URL+"/api/arxiv/downloads/"+jobID+"/stream", nil)
-	streamReq.Header.Set(middleware.APITokenHeader, setup.TestToken)
+	streamReq := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/arxiv/downloads/"+jobID+"/stream", nil).WithContext(ctx)
 	streamResp, err := http.DefaultClient.Do(streamReq)
 	if err != nil {
 		t.Fatalf("stream request: %v", err)
@@ -104,7 +101,7 @@ func runScenario(
 	frames := readUntilSummary(t, streamResp.Body)
 
 	// Status snapshot.
-	statusResp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/downloads/"+jobID)
+	statusResp := doAuthenticatedGet(t, env, "/api/arxiv/downloads/"+jobID)
 	defer statusResp.Body.Close()
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("status endpoint = %d want 200", statusResp.StatusCode)

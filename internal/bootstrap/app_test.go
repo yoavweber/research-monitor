@@ -16,10 +16,30 @@ import (
 	"gorm.io/gorm"
 
 	domainextraction "github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
+	"github.com/yoavweber/research-monitor/backend/internal/domain/shared"
+	authinfra "github.com/yoavweber/research-monitor/backend/internal/infrastructure/auth"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence"
 	extractionpersist "github.com/yoavweber/research-monitor/backend/internal/infrastructure/persistence/extraction"
 )
+
+// mintTestToken issues a JWT signed with env's own AUTH_JWT_SECRET/TTL —
+// the same values NewApp threads into its JWTAuth middleware — so these
+// route-wiring tests exercise a token the running app actually accepts
+// without going through a real login round trip (that flow belongs to the
+// auth-feature's own integration tests).
+func mintTestToken(t *testing.T, env *Env) string {
+	t.Helper()
+	svc := authinfra.NewJWTTokenService(authinfra.JWTConfig{
+		Secret: []byte(env.JWTSecret),
+		TTL:    env.JWTTTL,
+		Clock:  shared.SystemClock{},
+	})
+	token, _, err := svc.Issue(uuid.NewString())
+	if err != nil {
+		t.Fatalf("mint test token: %v", err)
+	}
+	return token
+}
 
 // TestNewApp_WiresArxivRoute verifies that NewApp assembles the runtime
 // pipeline (byte fetcher → arxiv fetcher → query → route.ArxivConfig) such
@@ -61,7 +81,7 @@ func TestNewApp_WiresArxivRoute(t *testing.T) {
 	// was reached but the use case hit a nil Fetcher — the bootstrap is
 	// missing the arxiv wiring this task introduces.
 	req := httptest.NewRequest(http.MethodGet, "/api/arxiv/fetch", nil)
-	req.Header.Set(middleware.APITokenHeader, env.APIToken)
+	req.Header.Set("Authorization", "Bearer "+mintTestToken(t, env))
 	w := httptest.NewRecorder()
 	app.Engine.ServeHTTP(w, req)
 
@@ -71,7 +91,7 @@ func TestNewApp_WiresArxivRoute(t *testing.T) {
 	case http.StatusInternalServerError:
 		t.Fatalf("GET /api/arxiv/fetch returned 500: handler reached but nil Fetcher caused a panic; body=%s", w.Body.String())
 	case http.StatusUnauthorized:
-		t.Fatalf("GET /api/arxiv/fetch returned 401 with a valid X-API-Token; body=%s", w.Body.String())
+		t.Fatalf("GET /api/arxiv/fetch returned 401 with a valid bearer token; body=%s", w.Body.String())
 	}
 	// Any remaining status (200, 502, 504, ...) proves the pipeline is
 	// wired: the real fetcher ran and classified the upstream outcome.
@@ -117,7 +137,7 @@ func TestNewApp_WiresPaperRoutes(t *testing.T) {
 	// the papers table exists. A 500 here means the migration did not
 	// include the papers table or the repo was not threaded into Deps.
 	reqList := httptest.NewRequest(http.MethodGet, "/api/papers", nil)
-	reqList.Header.Set(middleware.APITokenHeader, env.APIToken)
+	reqList.Header.Set("Authorization", "Bearer "+mintTestToken(t, env))
 	wList := httptest.NewRecorder()
 	app.Engine.ServeHTTP(wList, reqList)
 	if wList.Code != http.StatusOK {
@@ -135,7 +155,7 @@ func TestNewApp_WiresPaperRoutes(t *testing.T) {
 	// not 500: the repo's ErrNotFound has to flow through the controller and
 	// the ErrorEnvelope middleware that NewApp mounts on the engine.
 	reqGet := httptest.NewRequest(http.MethodGet, "/api/papers/arxiv/unknown", nil)
-	reqGet.Header.Set(middleware.APITokenHeader, env.APIToken)
+	reqGet.Header.Set("Authorization", "Bearer "+mintTestToken(t, env))
 	wGet := httptest.NewRecorder()
 	app.Engine.ServeHTTP(wGet, reqGet)
 	if wGet.Code != http.StatusNotFound {

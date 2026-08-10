@@ -18,12 +18,12 @@ func TestSources_CreateThenList(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"name": "Uniswap", "kind": "rss", "url": "https://uniswap.org/blog/rss.xml",
 	})
-	resp := doAuthenticatedPost(t, env.Server.URL+"/api/sources", string(body))
+	resp := doAuthenticatedPost(t, env, "/api/sources", string(body))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d want 201", resp.StatusCode)
 	}
 
-	list := doAuthenticatedGet(t, env.Server.URL+"/api/sources")
+	list := doAuthenticatedGet(t, env, "/api/sources")
 	defer list.Body.Close()
 
 	var listBody struct {

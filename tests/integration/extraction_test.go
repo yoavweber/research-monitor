@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/extraction"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
@@ -43,9 +42,10 @@ type extractionStatusWire struct {
 // their assertions (mirrors the papers_test.go authenticated-request helper).
 func doExtractionPost(t *testing.T, env *setup.TestEnv, body string) *http.Response {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, env.Server.URL+"/api/extractions", bytes.NewBufferString(body))
+	req := setup.AuthorizedRequest(t, env, http.MethodPost, "/api/extractions", nil)
+	req.Body = io.NopCloser(bytes.NewBufferString(body))
+	req.ContentLength = int64(len(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("post: %v", err)
@@ -56,8 +56,7 @@ func doExtractionPost(t *testing.T, env *setup.TestEnv, body string) *http.Respo
 // doExtractionGet issues an authenticated GET /api/extractions/:id.
 func doExtractionGet(t *testing.T, env *setup.TestEnv, id string) *http.Response {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/extractions/"+id, nil)
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
+	req := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/extractions/"+id, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)

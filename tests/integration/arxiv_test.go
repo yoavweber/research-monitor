@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
@@ -34,8 +33,7 @@ func arxivQuery() paper.Query {
 // Extracted so each scenario stays focused on its assertions.
 func doAuthenticatedFetch(t *testing.T, env *setup.TestEnv) *http.Response {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/arxiv/fetch", nil)
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
+	req := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/arxiv/fetch", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -162,7 +160,7 @@ func TestArxivIntegration_Happy(t *testing.T) {
 	// R5.1: persistence side effect — the first entry is now retrievable via
 	// the read endpoint, proving the fetch path actually wrote to the same
 	// catalogue /api/papers serves from.
-	getResp := doAuthenticatedGet(t, env.Server.URL+"/api/papers/arxiv/2404.12345")
+	getResp := doAuthenticatedGet(t, env, "/api/papers/arxiv/2404.12345")
 	defer getResp.Body.Close()
 	if getResp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/papers/arxiv/2404.12345 status = %d want 200 (R5.1)", getResp.StatusCode)
@@ -332,15 +330,16 @@ func TestArxivIntegration_EmptyFeed(t *testing.T) {
 }
 
 // security
-// TestArxivIntegration_401 covers requirement 1.2: the APIToken middleware
-// must short-circuit before the fetcher is invoked whether the token is
-// missing or wrong. fake.Invocations protects that guarantee on both branches.
+// TestArxivIntegration_401 covers requirement 1.2: the JWT auth middleware
+// must short-circuit before the fetcher is invoked whether the bearer token
+// is missing or invalid. fake.Invocations protects that guarantee on both
+// branches.
 func TestArxivIntegration_401(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name  string
-		token string // empty = no header
+		token string // empty = no Authorization header
 	}{
 		{"missing token", ""},
 		{"invalid token", "wrong-token"},
@@ -359,7 +358,7 @@ func TestArxivIntegration_401(t *testing.T) {
 
 			req, _ := http.NewRequest(http.MethodGet, env.Server.URL+"/api/arxiv/fetch", nil)
 			if tc.token != "" {
-				req.Header.Set(middleware.APITokenHeader, tc.token)
+				req.Header.Set("Authorization", "Bearer "+tc.token)
 			}
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {

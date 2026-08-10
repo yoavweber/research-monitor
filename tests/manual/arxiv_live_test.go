@@ -30,7 +30,6 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	arxivctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/arxiv"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/arxiv"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/httpclient"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
@@ -342,11 +341,7 @@ func doDownloadStatus(t *testing.T, env *setup.TestEnv, jobID string) paperctrl.
 
 func doAuthenticatedJSON(t *testing.T, env *setup.TestEnv, path string, out any) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, env.Server.URL+path, nil)
-	if err != nil {
-		t.Fatalf("new request %s: %v", path, err)
-	}
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
+	req := setup.AuthorizedRequest(t, env, http.MethodGet, path, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request %s: %v", path, err)

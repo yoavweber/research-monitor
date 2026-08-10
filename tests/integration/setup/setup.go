@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -48,8 +49,6 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/http/route"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
-
-const TestToken = "test-token"
 
 // testBcryptCost keeps SeedTestUser fast — production uses cost 12, but
 // every integration test that logs in would otherwise pay that cost on
@@ -189,9 +188,13 @@ type TestEnv struct {
 	AuthClock *mocks.MovableClock
 
 	// authToken caches the token obtained by the first AuthorizedRequest
-	// call in a test, so repeated calls don't re-login. Set via
-	// LoginAsTestUser; access only through AuthorizedRequest.
-	authToken string
+	// call in a test, so repeated calls don't re-login. Guarded by
+	// authTokenMu because concurrency tests call AuthorizedRequest from
+	// multiple goroutines sharing one TestEnv (e.g. fireFetch in
+	// arxiv_pdf_download_concurrency_test.go). Access only through
+	// AuthorizedRequest.
+	authTokenMu sync.Mutex
+	authToken   string
 
 	Close func()
 }
@@ -239,8 +242,6 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 
 	engine := gin.New()
 	engine.Use(middleware.RequestID(), middleware.Logger(logger), middleware.Recovery(logger), middleware.ErrorEnvelope())
-	api := engine.Group("/api", middleware.APIToken(TestToken))
-	rootGroup := engine.Group("/")
 
 	// Auth is wired unconditionally (not opt-in) so SeedTestUser,
 	// LoginAsTestUser, and AuthorizedRequest work in every test without each
@@ -258,6 +259,9 @@ func SetupTestEnv(t *testing.T, opts ...TestEnvOpts) *TestEnv {
 		Clock:  authClock,
 	})
 	hasher := authinfra.NewBcryptHasher(testBcryptCost)
+
+	api := engine.Group("/api", middleware.JWTAuth(jwtService))
+	rootGroup := engine.Group("/")
 
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(200, common.Data(gin.H{"status": "ok"}))
@@ -562,9 +566,12 @@ func LoginAsTestUser(t *testing.T, env *TestEnv) string {
 func AuthorizedRequest(t *testing.T, env *TestEnv, method, path string, body any) *http.Request {
 	t.Helper()
 
+	env.authTokenMu.Lock()
 	if env.authToken == "" {
 		env.authToken = LoginAsTestUser(t, env)
 	}
+	token := env.authToken
+	env.authTokenMu.Unlock()
 
 	var reader *bytes.Reader
 	if body != nil {
@@ -584,6 +591,6 @@ func AuthorizedRequest(t *testing.T, env *TestEnv, method, path string, body any
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", env.authToken))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	return req
 }

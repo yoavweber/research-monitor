@@ -12,7 +12,6 @@ import (
 
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 )
@@ -75,7 +74,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 		})
 		t.Cleanup(env.Close)
 
-		jobID, scheduledIDs := fireFetch(t, env.Server.URL)
+		jobID, scheduledIDs := fireFetch(t, env)
 		if len(scheduledIDs) != len(entries) {
 			t.Fatalf("scheduled %d entries want %d", len(scheduledIDs), len(entries))
 		}
@@ -83,7 +82,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 		// Wait for the job to reach completed=true via the status
 		// endpoint. Bounded so a worker hang fails the test rather than
 		// stalling the runner.
-		waitForCompleted(t, env.Server.URL, jobID, 5*time.Second)
+		waitForCompleted(t, env, jobID, 5*time.Second)
 
 		// Force eviction by driving Sweep with a `now` that is comfortably
 		// beyond completedAt + Retention. The registry's job uses wall-
@@ -97,7 +96,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 
 		// Status endpoint: must now return 404 + standard error envelope
 		// (R6.3 + ErrorEnvelope middleware shape).
-		statusResp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/downloads/"+jobID)
+		statusResp := doAuthenticatedGet(t, env, "/api/arxiv/downloads/"+jobID)
 		defer statusResp.Body.Close()
 		if statusResp.StatusCode != http.StatusNotFound {
 			t.Fatalf("status after eviction = %d want %d", statusResp.StatusCode, http.StatusNotFound)
@@ -111,9 +110,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 		// text/event-stream.
 		streamCtx, streamCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer streamCancel()
-		streamReq, _ := http.NewRequestWithContext(streamCtx, http.MethodGet,
-			env.Server.URL+"/api/arxiv/downloads/"+jobID+"/stream", nil)
-		streamReq.Header.Set(middleware.APITokenHeader, setup.TestToken)
+		streamReq := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/arxiv/downloads/"+jobID+"/stream", nil).WithContext(streamCtx)
 		streamResp, err := http.DefaultClient.Do(streamReq)
 		if err != nil {
 			t.Fatalf("stream request: %v", err)
@@ -171,7 +168,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 		})
 		t.Cleanup(env.Close)
 
-		jobID, scheduledIDs := fireFetch(t, env.Server.URL)
+		jobID, scheduledIDs := fireFetch(t, env)
 		if len(scheduledIDs) != len(entries) {
 			t.Fatalf("scheduled %d entries want %d", len(scheduledIDs), len(entries))
 		}
@@ -187,7 +184,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 		// Status endpoint must still return 200 with completed=false.
 		// This is the R6.1 observable: an active job remains reachable
 		// past the retention window.
-		statusResp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/downloads/"+jobID)
+		statusResp := doAuthenticatedGet(t, env, "/api/arxiv/downloads/"+jobID)
 		var statusBody paperctrl.JobStatusEnvelope
 		func() {
 			defer statusResp.Body.Close()
@@ -213,7 +210,7 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 		for range entries {
 			release <- struct{}{}
 		}
-		waitForCompleted(t, env.Server.URL, jobID, 5*time.Second)
+		waitForCompleted(t, env, jobID, 5*time.Second)
 	})
 }
 
@@ -222,14 +219,14 @@ func TestIntegration_ArxivPDFDownload_Retention(t *testing.T) {
 // test rather than stalling the runner. The poll interval is small
 // (25ms) because the worker drives PDFs against an in-process
 // httptest.Server with sub-millisecond latency.
-func waitForCompleted(t *testing.T, baseURL, jobID string, timeout time.Duration) {
+func waitForCompleted(t *testing.T, env *setup.TestEnv, jobID string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for {
 		if time.Now().After(deadline) {
 			t.Fatalf("status endpoint never reported completed=true for job %s", jobID)
 		}
-		resp := doAuthenticatedGet(t, baseURL+"/api/arxiv/downloads/"+jobID)
+		resp := doAuthenticatedGet(t, env, "/api/arxiv/downloads/"+jobID)
 		var body paperctrl.JobStatusEnvelope
 		func() {
 			defer resp.Body.Close()

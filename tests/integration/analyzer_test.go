@@ -67,7 +67,7 @@ func TestAnalyzer_E2E(t *testing.T) {
 		defer env.Close()
 		id := seedExtraction(t, env, "done", "Body markdown for the analyzer test.")
 
-		postResp := doAuthenticatedPost(t, env.Server.URL+"/api/analyses", `{"extraction_id":"`+id+`"}`)
+		postResp := doAuthenticatedPost(t, env, "/api/analyses", `{"extraction_id":"`+id+`"}`)
 		if postResp.StatusCode != http.StatusOK {
 			raw, _ := io.ReadAll(postResp.Body)
 			t.Fatalf("POST status = %d, want 200; body=%s", postResp.StatusCode, raw)
@@ -91,7 +91,7 @@ func TestAnalyzer_E2E(t *testing.T) {
 			t.Errorf("DB.short = %q, response.short = %q", persisted.ShortSummary, got.ShortSummary)
 		}
 
-		getResp := doAuthenticatedGet(t, env.Server.URL+"/api/analyses/"+id)
+		getResp := doAuthenticatedGet(t, env, "/api/analyses/"+id)
 		if getResp.StatusCode != http.StatusOK {
 			raw, _ := io.ReadAll(getResp.Body)
 			t.Fatalf("GET status = %d, want 200; body=%s", getResp.StatusCode, raw)
@@ -107,11 +107,11 @@ func TestAnalyzer_E2E(t *testing.T) {
 		defer env.Close()
 		id := seedExtraction(t, env, "done", "First body.")
 
-		first := decodeAnalysisEnv(t, doAuthenticatedPost(t, env.Server.URL+"/api/analyses", `{"extraction_id":"`+id+`"}`))
+		first := decodeAnalysisEnv(t, doAuthenticatedPost(t, env, "/api/analyses", `{"extraction_id":"`+id+`"}`))
 		// SQLite writes time at second-or-better resolution; sleep so
 		// UpdatedAt is reliably observable as advanced.
 		time.Sleep(2 * time.Millisecond)
-		second := decodeAnalysisEnv(t, doAuthenticatedPost(t, env.Server.URL+"/api/analyses", `{"extraction_id":"`+id+`"}`))
+		second := decodeAnalysisEnv(t, doAuthenticatedPost(t, env, "/api/analyses", `{"extraction_id":"`+id+`"}`))
 
 		if c := countAnalyses(t, env, id); c != 1 {
 			t.Errorf("row count after rerun = %d, want 1", c)
@@ -153,9 +153,9 @@ func TestAnalyzer_E2E(t *testing.T) {
 					id = seedExtraction(t, env, tc.seedStatus, "")
 				}
 				if tc.method == http.MethodPost {
-					resp = doAuthenticatedPost(t, env.Server.URL+"/api/analyses", `{"extraction_id":"`+id+`"}`)
+					resp = doAuthenticatedPost(t, env, "/api/analyses", `{"extraction_id":"`+id+`"}`)
 				} else {
-					resp = doAuthenticatedGet(t, env.Server.URL + "/api/analyses/" + id)
+					resp = doAuthenticatedGet(t, env, "/api/analyses/"+id)
 				}
 				defer resp.Body.Close()
 

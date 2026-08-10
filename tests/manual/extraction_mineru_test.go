@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/internal/infrastructure/extraction/mineru"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 )
@@ -94,9 +93,10 @@ func TestExtraction_RealMineru(t *testing.T) {
 	// Submit. The body shape mirrors the hermetic suite's POST contract so a
 	// drift in the controller's bind tags will surface here as well.
 	body := `{"source_type":"paper","source_id":"amm-arbitrage-fees","pdf_path":"` + pdfPath + `"}`
-	req, _ := http.NewRequest(http.MethodPost, env.Server.URL+"/api/extractions", bytes.NewBufferString(body))
+	req := setup.AuthorizedRequest(t, env, http.MethodPost, "/api/extractions", nil)
+	req.Body = io.NopCloser(bytes.NewBufferString(body))
+	req.ContentLength = int64(len(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("post: %v", err)
@@ -137,8 +137,7 @@ func TestExtraction_RealMineru(t *testing.T) {
 	pollStart := time.Now()
 	deadline := pollStart.Add(callTimeout)
 	for {
-		getReq, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, env.Server.URL+"/api/extractions/"+submitted.ID, nil)
-		getReq.Header.Set(middleware.APITokenHeader, setup.TestToken)
+		getReq := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/extractions/"+submitted.ID, nil).WithContext(pollCtx)
 		getResp, getErr := http.DefaultClient.Do(getReq)
 		if getErr != nil {
 			t.Fatalf("poll GET: %v", getErr)

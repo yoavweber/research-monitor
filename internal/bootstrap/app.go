@@ -209,7 +209,7 @@ func NewApp(ctx context.Context, env *Env) (*App, error) {
 	// (POST /auth/login) can mount on it; AuthRouter layers JWTAuth onto a
 	// nested /auth subgroup for the protected pair.
 	rootGroup := engine.Group("/")
-	api := engine.Group("/api", middleware.APIToken(env.APIToken))
+	api := engine.Group("/api", middleware.JWTAuth(jwtService))
 	deps := route.Deps{
 		Group:     api,
 		RootGroup: rootGroup,

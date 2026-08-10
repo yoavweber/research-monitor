@@ -10,18 +10,16 @@ import (
 	"testing"
 
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/ssetest"
 )
 
-// doAuthenticatedGet issues a GET against the test server with the canonical
-// X-API-Token. Each scenario stays focused on its assertions and the auth
-// header is set in exactly one place.
-func doAuthenticatedGet(t *testing.T, url string) *http.Response {
+// doAuthenticatedGet issues a GET against path (relative to env's server, not
+// a full URL) with a valid bearer token. Each scenario stays focused on its
+// assertions and the auth header is set in exactly one place.
+func doAuthenticatedGet(t *testing.T, env *setup.TestEnv, path string) *http.Response {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
+	req := setup.AuthorizedRequest(t, env, http.MethodGet, path, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -29,12 +27,17 @@ func doAuthenticatedGet(t *testing.T, url string) *http.Response {
 	return resp
 }
 
-// doAuthenticatedPost issues an authenticated POST with a JSON body string.
-func doAuthenticatedPost(t *testing.T, url, body string) *http.Response {
+// doAuthenticatedPost issues an authenticated POST with a raw JSON body
+// string against path (relative to env's server). The body is set directly
+// (not passed through AuthorizedRequest's json.Marshal) because callers
+// already hand in pre-formatted JSON literals, and re-marshaling a string
+// would quote it into an invalid body.
+func doAuthenticatedPost(t *testing.T, env *setup.TestEnv, path, body string) *http.Response {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	req := setup.AuthorizedRequest(t, env, http.MethodPost, path, nil)
+	req.Body = io.NopCloser(strings.NewReader(body))
+	req.ContentLength = int64(len(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.APITokenHeader, setup.TestToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("post: %v", err)

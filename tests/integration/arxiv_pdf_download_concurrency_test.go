@@ -17,19 +17,18 @@ import (
 	"github.com/yoavweber/research-monitor/backend/internal/domain/paper"
 	arxivctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/arxiv"
 	paperctrl "github.com/yoavweber/research-monitor/backend/internal/http/controller/paper"
-	"github.com/yoavweber/research-monitor/backend/internal/http/middleware"
 	"github.com/yoavweber/research-monitor/backend/tests/integration/setup"
 	"github.com/yoavweber/research-monitor/backend/tests/mocks"
 	"github.com/yoavweber/research-monitor/backend/tests/ssetest"
 )
 
-// fireFetch issues a single authenticated GET /api/arxiv/fetch against
-// baseURL and returns the parsed job_id together with the per-entry
-// source_id list. source_ids come from the embedded job snapshot, which
-// the arxiv use case populates from the IsNew subset (R2.2).
-func fireFetch(t *testing.T, baseURL string) (jobID string, sourceIDs []string) {
+// fireFetch issues a single authenticated GET /api/arxiv/fetch against env
+// and returns the parsed job_id together with the per-entry source_id list.
+// source_ids come from the embedded job snapshot, which the arxiv use case
+// populates from the IsNew subset (R2.2).
+func fireFetch(t *testing.T, env *setup.TestEnv) (jobID string, sourceIDs []string) {
 	t.Helper()
-	resp := doAuthenticatedGet(t, baseURL+"/api/arxiv/fetch")
+	resp := doAuthenticatedGet(t, env, "/api/arxiv/fetch")
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/arxiv/fetch status = %d want 200", resp.StatusCode)
@@ -120,7 +119,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			go func(idx int) {
 				defer wg.Done()
-				id, srcIDs := fireFetch(t, env.Server.URL)
+				id, srcIDs := fireFetch(t, env)
 				results[idx] = fetchOut{jobID: id, sourceIDs: srcIDs}
 			}(i)
 		}
@@ -162,9 +161,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		for i, job := range []fetchOut{jobA, jobB} {
 			go func(idx int, job fetchOut) {
 				defer sw.Done()
-				req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
-					env.Server.URL+"/api/arxiv/downloads/"+job.jobID+"/stream", nil)
-				req.Header.Set(middleware.APITokenHeader, setup.TestToken)
+				req := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/arxiv/downloads/"+job.jobID+"/stream", nil).WithContext(ctx)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					streams[idx] = streamOut{err: err}
@@ -290,7 +287,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		})
 		t.Cleanup(env.Close)
 
-		jobID, scheduledIDs := fireFetch(t, env.Server.URL)
+		jobID, scheduledIDs := fireFetch(t, env)
 		if len(scheduledIDs) != want {
 			t.Fatalf("scheduled %d entries want %d", len(scheduledIDs), want)
 		}
@@ -307,9 +304,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		// policy).
 		streamCtx, streamCancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer streamCancel()
-		streamReq, _ := http.NewRequestWithContext(streamCtx, http.MethodGet,
-			env.Server.URL+"/api/arxiv/downloads/"+jobID+"/stream", nil)
-		streamReq.Header.Set(middleware.APITokenHeader, setup.TestToken)
+		streamReq := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/arxiv/downloads/"+jobID+"/stream", nil).WithContext(streamCtx)
 
 		type streamResult struct {
 			resp *http.Response
@@ -359,7 +354,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 			if time.Now().After(deadline) {
 				t.Fatalf("status endpoint never reported completed=true: last=%+v", finalStatus.Data)
 			}
-			resp := doAuthenticatedGet(t, env.Server.URL+"/api/arxiv/downloads/"+jobID)
+			resp := doAuthenticatedGet(t, env, "/api/arxiv/downloads/"+jobID)
 			func() {
 				defer resp.Body.Close()
 				if err := json.NewDecoder(resp.Body).Decode(&finalStatus); err != nil {
@@ -434,9 +429,7 @@ func TestIntegration_ArxivPDFDownload_Concurrency(t *testing.T) {
 		// log (R4.4 / R5.4).
 		replayCtx, replayCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer replayCancel()
-		replayReq, _ := http.NewRequestWithContext(replayCtx, http.MethodGet,
-			env.Server.URL+"/api/arxiv/downloads/"+jobID+"/stream", nil)
-		replayReq.Header.Set(middleware.APITokenHeader, setup.TestToken)
+		replayReq := setup.AuthorizedRequest(t, env, http.MethodGet, "/api/arxiv/downloads/"+jobID+"/stream", nil).WithContext(replayCtx)
 		replayResp, err := http.DefaultClient.Do(replayReq)
 		if err != nil {
 			t.Fatalf("replay stream request: %v", err)
