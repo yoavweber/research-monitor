@@ -1,9 +1,9 @@
 {
   "feature_name": "user-auth",
   "created_at": "2026-05-12T20:30:59Z",
-  "updated_at": "2026-05-12T20:55:36Z",
+  "updated_at": "2026-08-11T00:00:00Z",
   "language": "en",
-  "phase": "tasks-generated",
+  "phase": "tasks-approved",
   "approvals": {
     "requirements": {
       "generated": true,
