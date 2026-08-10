@@ -7,11 +7,18 @@ Personal research-feed backend. Aggregates DeFi news + academic sources, summari
 ```bash
 cp .env.example .env
 # edit .env: set AUTH_JWT_SECRET (openssl rand -base64 32) and (later) ANTHROPIC_API_KEY
-task run
-go run ./cmd/seed users you@example.com <a-password-12-72-bytes>
+task run                                                    # in one terminal
+task seed:user -- you@example.com a-password-12-72-bytes    # one-time, idempotent
+task dev:login -- you@example.com a-password-12-72-bytes    # writes .dev-token
 ```
 
-Then log in: `POST /auth/login` with that email/password returns a 24h JWT; send it as `Authorization: Bearer <token>` on every `/api/*` request. No refresh token — re-run login when it expires.
+Every `/api/*` request then needs `Authorization: Bearer $(cat .dev-token)`, e.g.:
+
+```bash
+curl -H "Authorization: Bearer $(cat .dev-token)" http://localhost:8080/api/sources
+```
+
+The token is a 24h JWT with no refresh — once it expires, re-run `task dev:login`.
 
 ## Architecture
 

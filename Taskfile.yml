@@ -16,6 +16,16 @@ tasks:
     cmds:
       - go run ./cmd/seed
 
+  seed:user:
+    desc: 'Create (or no-op if it exists) a local operator account. Usage: task seed:user -- you@example.com a-password-12-72-bytes'
+    cmds:
+      - go run ./cmd/seed users {{.CLI_ARGS}}
+
+  dev:login:
+    desc: 'Log in against the locally running API (task run) and cache the token in .dev-token. Usage: task dev:login -- you@example.com your-password'
+    cmds:
+      - go run ./cmd/devlogin {{.CLI_ARGS}}
+
   test:
     desc: Run unit tests
     cmds:
