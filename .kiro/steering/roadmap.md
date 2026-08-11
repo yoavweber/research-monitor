@@ -41,6 +41,15 @@ Personal DeFi research monitor backend. The system ingests papers (and later, go
   - File schema versioning — a missing or malformed file should fail closed at startup, not silently revert to "no keywords, no date filter".
   - Behavior when the file is edited at runtime: read-once-at-startup vs. read-on-each-fetch. Treat as a design decision in the new spec, not a roadmap-level call.
 
+## Approach Decision: Pipeline Auto-Continuation (added 2026-08-11)
+
+A second, independent thread of work alongside the `arxiv-search-defaults` entry above — different domain (pipeline automation, not fetch filtering), no dependency between them, can proceed in parallel.
+
+- **Chosen**: Two specs, not one. `pdf-to-extraction-trigger` (download → extraction) and `extraction-to-analysis-trigger` (extraction → analysis), each injecting a completion port into the upstream worker that calls the downstream use case directly — the same in-process pattern `arxiv-pdf-download` already established for `arxivUseCase.Fetch` → `Scheduler.Schedule`.
+- **Why split in two**: `arxiv-pdf-download` alone was 25 tasks for *one* such handoff; both legs in one spec risks an oversized, hard-to-review spec. The two legs also have different latency profiles — extraction's `Submit` is a fast DB write (synchronous call is fine), analysis's `Analyze` is a real LLM round-trip (needs async dispatch so it doesn't stall extraction's own single-threaded worker).
+- **Rejected alternative**: a polling bridge that scans for newly-completed rows. Ruled out for the download→extraction leg specifically — the pdfdownload registry's job state is in-memory and evicted after `PDF_DOWNLOAD_RETENTION`, so a poller can miss entries outright. Viable in principle for the extraction→analysis leg (extraction rows are persisted), but rejected there too for consistency — one architectural pattern across both legs is easier to review and maintain than two.
+- **Confirmed scope decisions** (from discovery dialogue): auto-trigger fires unconditionally for every successful download/extraction, including ones submitted manually (not just ones from the automated arxiv-fetch flow) and including re-extractions. Failures stop silently — visible via existing status endpoints and logs, no new failure-surfacing mechanism.
+
 ## Existing Spec Updates
 
 - [ ] arxiv-fetcher — add optional `from`, `to`, `keywords` query parameters to the fetch endpoint; consume `SearchDefaults` port to fall back to stored values when parameters are omitted; document that categories remain env-only. Dependencies: arxiv-search-defaults
@@ -48,6 +57,8 @@ Personal DeFi research monitor backend. The system ingests papers (and later, go
 ## Specs (dependency order)
 
 - [ ] arxiv-search-defaults — file-backed `SearchDefaults` port providing a default keyword list and default date window, hand-edited via a JSON/YAML file on disk, no HTTP surface. Dependencies: none. Touches `application/arxiv`'s use case, which `arxiv-pdf-download` also modified — read that spec's boundary section before amending.
+- [ ] pdf-to-extraction-trigger — auto-submits extraction the moment a PDF download succeeds, using the canonical path `pdf.Store` wrote to; no more hand-supplied `pdf_path`. Dependencies: none (unrelated to arxiv-search-defaults; can proceed in parallel). Sequenced before its sibling below so the injected-port pattern is proven on the simpler synchronous case first.
+- [ ] extraction-to-analysis-trigger — auto-submits analysis the moment an extraction reaches `done`, dispatched asynchronously so it doesn't stall extraction's worker; no more hand-carried `extraction_id`. Dependencies: none architecturally, but sequenced after `pdf-to-extraction-trigger` above (same pattern, proven once).
 
 ## Completed / In-flight (not part of this roadmap entry)
 
@@ -61,7 +72,7 @@ Personal DeFi research monitor backend. The system ingests papers (and later, go
 
 ## Known Gaps
 
-- The product pipeline (fetch → dedupe → triage → extract → LLM → persist, per [product.md](./product.md)) is still not connected end-to-end even after `arxiv-pdf-download`. Fetch now auto-downloads PDFs, but `document-extraction` still requires the operator to hand-supply the resulting `pdf_path`, and `POST /analyses` still requires a hand-carried `extraction_id`. No spec exists yet for either handoff, or for a triage stage.
+- The product pipeline (fetch → dedupe → triage → extract → LLM → persist, per [product.md](./product.md)) is still not connected end-to-end even after `arxiv-pdf-download`. Fetch now auto-downloads PDFs, but `document-extraction` still requires the operator to hand-supply the resulting `pdf_path`, and `POST /analyses` still requires a hand-carried `extraction_id`. As of 2026-08-11 both handoffs have briefs (`pdf-to-extraction-trigger`, `extraction-to-analysis-trigger`, both queued in "Specs (dependency order)" above) but no requirements/design/tasks yet. A triage stage remains entirely unspecced — no brief.
 - RSS ingestion is called out as the v1 concrete ingestion source in `product.md` but has no spec; only `domain/source` + `feedutil` scaffolding exists.
 - Real LLM provider integration is deliberately last in sequence, not forgotten — see `llm-analyzer` note above.
 - **Process note**: local `main` was 36 commits behind `origin/main` as of 2026-08-10 (missing the entire `arxiv-pdf-download` merge) until this session force-synced it. Verify `git status` vs `origin/main` before trusting this file's "Completed" section in future sessions — this roadmap is hand-maintained and both this repo's remote and local copies have gone stale before.
